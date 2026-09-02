@@ -222,10 +222,25 @@
     <div id="exportModal" class="modal-backdrop" style="display:none">
         <div class="modal-dialog">
             <div class="modal-header">
-                <h3>🎬 Export MP4 Video (SkiaSharp + FFmpeg)</h3>
+                <h3>🎬 Export Video (Instant & HD Master)</h3>
                 <button id="btnCloseModal" class="btn-close">&times;</button>
             </div>
             <div class="modal-body">
+                <!-- 1. Instant Local Video (0-sec wait) -->
+                <div id="instantDownloadBox" style="background:#161B22; border:1px solid #238636; border-radius:8px; padding:12px; margin-bottom:14px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#3FB950">⚡ Instant Video (Local Storage)</div>
+                            <div style="font-size:11px; color:#8B949E; margin-top:2px">Saved in browser with audio & video (0s wait)</div>
+                        </div>
+                        <button id="btnInstantDownload" class="btn btn-sm btn-primary" style="background:#238636">⬇ Instant Download</button>
+                    </div>
+                </div>
+
+                <div class="divider" style="margin:12px 0"></div>
+
+                <div style="font-size:12px; font-weight:700; color:#38BDF8; margin-bottom:8px">RENDER MASTER HD MP4 (CLOUD FFMPEG)</div>
+
                 <div class="form-group">
                     <label>Resolution Preset:</label>
                     <select id="exportResolution" class="form-select">
@@ -251,7 +266,7 @@
             </div>
             <div class="modal-footer">
                 <button id="btnCancelExport" class="btn btn-secondary">Close</button>
-                <button id="btnStartExport" class="btn btn-primary">Start Export & Download</button>
+                <button id="btnStartExport" class="btn btn-primary">🎬 Render Master MP4</button>
             </div>
         </div>
     </div>

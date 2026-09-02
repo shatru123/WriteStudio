@@ -1144,7 +1144,6 @@ class WriteStudioEngine {
             btnStop.style.display = 'none';
         }
     }
-
     recordTimelineEvent(evt) {
         evt.eventId = this.generateGuid();
         evt.wallClockUtc = new Date().toISOString();
@@ -1160,10 +1159,36 @@ class WriteStudioEngine {
         const btnClose = document.getElementById('btnCloseModal');
         const btnCancel = document.getElementById('btnCancelExport');
         const btnStart = document.getElementById('btnStartExport');
+        const btnInstant = document.getElementById('btnInstantDownload');
+        const instantBox = document.getElementById('instantDownloadBox');
 
-        btnExport.addEventListener('click', () => modal.style.display = 'flex');
+        const showModal = () => {
+            if (instantBox) {
+                instantBox.style.display = this.localVideoBlob ? 'block' : 'none';
+            }
+            modal.style.display = 'flex';
+        };
+
+        btnExport.addEventListener('click', showModal);
         btnClose.addEventListener('click', () => modal.style.display = 'none');
         btnCancel.addEventListener('click', () => modal.style.display = 'none');
+
+        if (btnInstant) {
+            btnInstant.addEventListener('click', () => {
+                if (this.localVideoBlob) {
+                    const url = window.URL.createObjectURL(this.localVideoBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `WriteStudio_Lesson_${Date.now()}.webm`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    modal.style.display = 'none';
+                } else {
+                    alert('No local recording found. Click "Render Master MP4" to generate the video.');
+                }
+            });
+        }
 
         btnStart.addEventListener('click', async () => {
             btnStart.disabled = true;
@@ -1174,6 +1199,19 @@ class WriteStudioEngine {
             progressContainer.style.display = 'block';
             progressBar.style.width = '20%';
             statusText.textContent = 'Packaging session tracks and rasterizing vector strokes...';
+
+            let progressPct = 20;
+            const progressTimer = setInterval(() => {
+                if (progressPct < 90) {
+                    progressPct += 5;
+                    progressBar.style.width = `${progressPct}%`;
+                    if (progressPct >= 40 && progressPct < 70) {
+                        statusText.textContent = 'FFmpeg encoding video & audio tracks...';
+                    } else if (progressPct >= 70) {
+                        statusText.textContent = 'Finalizing MP4 container...';
+                    }
+                }
+            }, 300);
 
             let durationStr = this.getElapsedSessionTime();
             if (durationStr === '00:00:00' || durationStr === '00:00:00.000') {
@@ -1246,13 +1284,12 @@ class WriteStudioEngine {
             }
 
             try {
-                progressBar.style.width = '60%';
-                statusText.textContent = 'FFmpeg compositing video & audio tracks...';
-
                 const response = await fetch('/api/export', {
                     method: 'POST',
                     body: formData
                 });
+
+                clearInterval(progressTimer);
 
                 if (!response.ok) {
                     const errorText = await response.text();
@@ -1296,6 +1333,7 @@ class WriteStudioEngine {
                     btnStart.disabled = false;
                 }, 1200);
             } catch (err) {
+                clearInterval(progressTimer);
                 alert(`Export error: ${err.message}`);
                 btnStart.disabled = false;
                 progressContainer.style.display = 'none';
