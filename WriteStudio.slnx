@@ -8,6 +8,7 @@
     <Project Path="src/WriteStudio.Rendering/WriteStudio.Rendering.csproj" />
     <Project Path="src/WriteStudio.Slides/WriteStudio.Slides.csproj" />
     <Project Path="src/WriteStudio.Storage/WriteStudio.Storage.csproj" />
+    <Project Path="src/WriteStudio.Web/WriteStudio.Web.csproj" />
     <Project Path="src/WriteStudio.Whiteboard/WriteStudio.Whiteboard.csproj" />
   </Folder>
   <Folder Name="/tests/">

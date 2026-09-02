@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WriteStudio — .NET Teaching & Lecture Studio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="studio-header">
+        <div class="logo-group">
+            <div class="logo-badge">W</div>
+            <div class="logo-title">WriteStudio</div>
+            <div class="logo-tagline">— Professional Teaching & Handwritten Video Studio</div>
+        </div>
+
+        <div class="header-right">
+            <div id="recordingPill" class="recording-pill state-ready">
+                <span class="status-dot"></span>
+                <span id="statusLabel">READY</span>
+                <span class="pill-divider">|</span>
+                <span id="timerDisplay" class="timer-display">00:00:00</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main 3-Pane Studio Container -->
+    <main class="studio-main">
+        <!-- LEFT PANE: Private Presenter Reference Slides -->
+        <aside class="sidebar-left">
+            <div class="pane-title">
+                <span>PRESENTER REFERENCE</span>
+                <span class="badge-private">PRIVATE</span>
+            </div>
+            <div class="pane-subtitle">Visible ONLY to you — Excluded from final video</div>
+
+            <div class="slide-uploader">
+                <input type="file" id="slideFileInput" accept="image/*,.pdf" style="display:none">
+                <button id="btnLoadSlides" class="btn btn-secondary">📁 Load Reference Material...</button>
+            </div>
+
+            <!-- Slide Viewport -->
+            <div class="slide-viewport" id="slideViewport">
+                <div id="slidePlaceholder" class="slide-placeholder">
+                    <div class="placeholder-icon">📑</div>
+                    <div class="placeholder-text">No reference slides loaded</div>
+                    <div class="placeholder-hint">Load private notes, solutions, or slides to reference while teaching.</div>
+                </div>
+                <img id="currentSlideImg" class="current-slide-img" style="display:none" alt="Presenter Reference Slide">
+            </div>
+
+            <!-- Slide Navigation Bar -->
+            <div class="slide-nav-bar" id="slideNavBar" style="display:none">
+                <button id="btnPrevSlide" class="btn btn-sm btn-dark">◀ Prev</button>
+                <span id="slideCounter" class="slide-counter">1 / 1</span>
+                <button id="btnNextSlide" class="btn btn-sm btn-dark">Next ▶</button>
+            </div>
+        </aside>
+
+        <!-- CENTER PANE: Virtual Whiteboard Canvas -->
+        <section class="canvas-center">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <canvas id="whiteboardCanvas"></canvas>
+                
+                <!-- Webcam Picture-in-Picture Overlay -->
+                <div id="cameraPip" class="camera-pip pip-bottom-right">
+                    <video id="webcamVideo" autoplay playsinline muted></video>
+                    <div id="camPlaceholder" class="cam-placeholder">
+                        <span>📹 Camera Off</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas Page Switcher Bar -->
+            <div class="page-bar">
+                <div class="page-nav">
+                    <button id="btnPrevPage" class="btn btn-sm btn-dark">◀</button>
+                    <span id="pageIndicator" class="page-indicator">Page 1 of 1</span>
+                    <button id="btnNextPage" class="btn btn-sm btn-dark">▶</button>
+                </div>
+                <div class="page-actions">
+                    <button id="btnAddPage" class="btn btn-sm btn-primary">➕ Add Page</button>
+                    <button id="btnDeletePage" class="btn btn-sm btn-danger">🗑 Delete</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT PANE: Drawing Tools Palette -->
+        <aside class="sidebar-right">
+            <div class="pane-title">DRAWING TOOLS</div>
+
+            <!-- Primary Tools Grid -->
+            <div class="tools-grid">
+                <button class="tool-btn active" data-tool="pen" title="Pen (Vector Pressure)">✏ Pen</button>
+                <button class="tool-btn" data-tool="pencil" title="Pencil">🖍 Pencil</button>
+                <button class="tool-btn" data-tool="highlighter" title="Marker / Highlighter">✨ Marker</button>
+                <button class="tool-btn" data-tool="eraser" title="Eraser">🧹 Eraser</button>
+                <button class="tool-btn" data-tool="line" title="Straight Line">📏 Line</button>
+                <button class="tool-btn" data-tool="rectangle" title="Rectangle Box">⬛ Rect</button>
+                <button class="tool-btn" data-tool="circle" title="Circle">⭕ Circle</button>
+                <button class="tool-btn" data-tool="arrow" title="Arrow Indicator">➔ Arrow</button>
+                <button class="tool-btn" data-tool="text" title="Text Annotation">🔤 Text</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Color Palette -->
+            <div class="section-label">PALETTE</div>
+            <div class="palette-grid">
+                <button class="color-btn active" data-color="#FFFFFF" style="background:#FFFFFF"></button>
+                <button class="color-btn" data-color="#F5C518" style="background:#F5C518"></button>
+                <button class="color-btn" data-color="#1ABC9C" style="background:#1ABC9C"></button>
+                <button class="color-btn" data-color="#3483EB" style="background:#3483EB"></button>
+                <button class="color-btn" data-color="#EB3434" style="background:#EB3434"></button>
+                <button class="color-btn" data-color="#2EB85C" style="background:#2EB85C"></button>
+                <button class="color-btn" data-color="#F58220" style="background:#F58220"></button>
+                <button class="color-btn" data-color="#9B59B6" style="background:#9B59B6"></button>
+                <button class="color-btn" data-color="#000000" style="background:#000000; border-color:#555"></button>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Stroke Thickness Slider -->
+            <div class="section-label">THICKNESS: <span id="thicknessValue">4</span>px</div>
+            <input type="range" id="thicknessSlider" min="1" max="32" value="4" class="slider">
+
+            <div class="divider"></div>
+
+            <!-- Background Selector -->
+            <div class="section-label">CANVAS BACKGROUND</div>
+            <select id="bgSelector" class="form-select">
+                <option value="Blackboard" selected>Slate Blackboard</option>
+                <option value="White">Clean White</option>
+                <option value="DarkGrid">Dark Math Grid</option>
+                <option value="LightGrid">Light Math Grid</option>
+                <option value="Ruled">Ruled Lined Paper</option>
+                <option value="DarkRuled">Dark Ruled Paper</option>
+            </select>
+
+            <div class="divider"></div>
+
+            <!-- Undo / Redo / Clear -->
+            <div class="undo-redo-row">
+                <button id="btnUndo" class="btn btn-dark btn-half" title="Undo (Cmd+Z / Ctrl+Z)">↩ Undo</button>
+                <button id="btnRedo" class="btn btn-dark btn-half" title="Redo (Cmd+Y / Ctrl+Y)">↪ Redo</button>
+            </div>
+            <button id="btnClearCanvas" class="btn btn-danger btn-full" style="margin-top:8px">🗑 Clear Canvas</button>
+        </aside>
+    </main>
+
+    <!-- Bottom Studio Control Dock -->
+    <footer class="studio-dock">
+        <!-- 1. Audio & VU Meter -->
+        <div class="dock-panel dock-audio">
+            <div class="panel-header">🎙 MICROPHONE & AUDIO</div>
+            <div class="audio-control-row">
+                <button id="btnEnableAudio" class="btn btn-sm btn-secondary">Connect Mic</button>
+                <div class="vu-meter-container">
+                    <div id="vuMeterBar" class="vu-meter-bar"></div>
+                </div>
+            </div>
+            <div id="audioStatus" class="dock-subtext">Click 'Connect Mic' to enable live input metering</div>
+        </div>
+
+        <!-- 2. Camera Controls -->
+        <div class="dock-panel dock-camera">
+            <div class="panel-header">📹 WEBCAM / PiP OVERLAY</div>
+            <div class="camera-control-row">
+                <button id="btnToggleCamera" class="btn btn-sm btn-secondary">Enable Camera</button>
+                <select id="cameraLayoutSelector" class="form-select select-sm">
+                    <option value="BottomRight" selected>Bottom-Right</option>
+                    <option value="BottomLeft">Bottom-Left</option>
+                    <option value="TopRight">Top-Right</option>
+                    <option value="TopLeft">Top-Left</option>
+                    <option value="Fullscreen">Fullscreen</option>
+                    <option value="Hidden">Hidden</option>
+                </select>
+                <label class="mirror-toggle"><input type="checkbox" id="chkMirror" checked> Mirror</label>
+            </div>
+            <div class="dock-subtext">Camera renders as synchronized picture-in-picture layer</div>
+        </div>
+
+        <!-- 3. Master Recording Action Hub -->
+        <div class="dock-panel dock-recording">
+            <div class="recording-buttons">
+                <!-- Record Button -->
+                <button id="btnRecord" class="btn btn-record">● RECORD</button>
+                
+                <!-- Pause / Resume Button -->
+                <button id="btnPause" class="btn btn-pause" style="display:none">❚❚ PAUSE</button>
+                <button id="btnResume" class="btn btn-resume" style="display:none">▶ RESUME</button>
+                
+                <!-- Stop Button -->
+                <button id="btnStop" class="btn btn-stop" style="display:none">◼ STOP</button>
+            </div>
+
+            <!-- Export MP4 Button -->
+            <button id="btnExport" class="btn btn-export">🎬 Export MP4 Video</button>
+        </div>
+    </footer>
+
+    <!-- Export Modal Dialog -->
+    <div id="exportModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>🎬 Export MP4 Video (SkiaSharp + FFmpeg)</h3>
+                <button id="btnCloseModal" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Resolution Preset:</label>
+                    <select id="exportResolution" class="form-select">
+                        <option value="1920x1080" selected>1080p Full HD (1920 x 1080)</option>
+                        <option value="1280x720">720p HD (1280 x 720)</option>
+                        <option value="3840x2160">4K Ultra HD (3840 x 2160)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Frame Rate:</label>
+                    <select id="exportFps" class="form-select">
+                        <option value="30" selected>30 FPS (Standard Teaching)</option>
+                        <option value="60">60 FPS (Ultra Smooth)</option>
+                    </select>
+                </div>
+                
+                <div id="exportProgressContainer" style="display:none; margin-top:16px;">
+                    <div class="progress-bar-bg">
+                        <div id="exportProgressBar" class="progress-bar-fill" style="width:0%"></div>
+                    </div>
+                    <div id="exportStatusText" class="export-status-text">Rendering video frames via SkiaSharp & FFmpeg...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnCancelExport" class="btn btn-secondary">Close</button>
+                <button id="btnStartExport" class="btn btn-primary">Start Export & Download</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="studio.js"></script>
+</body>
+</html>
