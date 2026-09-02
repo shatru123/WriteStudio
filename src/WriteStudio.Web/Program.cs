@@ -199,10 +199,12 @@ app.MapPost("/api/export", async (
 
         if (success && File.Exists(outputMp4))
         {
-            byte[] videoBytes = await File.ReadAllBytesAsync(outputMp4);
-            logger.LogInformation("Export succeeded. Output size: {Bytes} bytes", videoBytes.Length);
-            try { Directory.Delete(tempDir, recursive: true); } catch { }
-            return Results.File(videoBytes, "video/mp4", Path.GetFileName(outputMp4));
+            var fileInfo = new FileInfo(outputMp4);
+            logger.LogInformation("Export succeeded. Output size: {Bytes} bytes", fileInfo.Length);
+            
+            // Stream directly to HTTP response to prevent Out-Of-Memory spikes on 512MB containers
+            var fileStream = new FileStream(outputMp4, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.DeleteOnClose);
+            return Results.File(fileStream, "video/mp4", Path.GetFileName(outputMp4), enableRangeProcessing: true);
         }
 
         return Results.Problem("Rendering pipeline did not produce output video file.");
@@ -211,6 +213,19 @@ app.MapPost("/api/export", async (
     {
         logger.LogError(ex, "Exception during video export.");
         return Results.Problem($"Export Error: {ex.Message}");
+    }
+    finally
+    {
+        // Cleanup temp files
+        try
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+        catch { }
+        GC.Collect(2, GCCollectionMode.Optimized, false);
     }
 });
 

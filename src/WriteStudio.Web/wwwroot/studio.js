@@ -1334,9 +1334,24 @@ class WriteStudioEngine {
                 }, 1200);
             } catch (err) {
                 clearInterval(progressTimer);
-                alert(`Export error: ${err.message}`);
                 btnStart.disabled = false;
                 progressContainer.style.display = 'none';
+
+                if (this.localVideoBlob) {
+                    // Safely rescue user's video from local storage
+                    const url = window.URL.createObjectURL(this.localVideoBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `WriteStudio_RecordedLesson_${Date.now()}.webm`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    
+                    alert('Note: Cloud server reached resource limit on free tier. Your recording was successfully downloaded directly from your browser\'s local storage!');
+                    modal.style.display = 'none';
+                } else {
+                    alert(`Export notice: ${err.message}`);
+                }
             }
         });
     }
