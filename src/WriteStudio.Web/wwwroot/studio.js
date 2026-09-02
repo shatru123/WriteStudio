@@ -1,5 +1,5 @@
 // WriteStudio Interactive Web Studio Client Engine
-// Complete with Vector Drawing, Microphone/Camera Recording, and Local Storage / IndexedDB Video Management
+// Complete with Vector Drawing, Live Webcam PiP Compositing, MP4 Local Recording, and IndexedDB Video Library
 
 // ==========================================
 // IndexedDB Local Storage Manager
@@ -129,6 +129,7 @@ class WriteStudioEngine {
         this.totalPausedDuration = 0;
         this.timelineEvents = [];
         this.timerInterval = null;
+        this.animFrameId = null;
 
         // Presenter Reference Slides
         this.slides = [];
@@ -149,7 +150,7 @@ class WriteStudioEngine {
         this.cameraChunks = [];
         this.recordedCameraBlob = null;
 
-        // Combined in-browser local canvas recorder
+        // Combined in-browser local canvas + camera recorder
         this.canvasRecorder = null;
         this.canvasChunks = [];
         this.localVideoBlob = null;
@@ -178,6 +179,7 @@ class WriteStudioEngine {
 
         this.renderCanvas();
         this.updateLibraryBadge();
+        this.startContinuousRenderLoop();
     }
 
     setupCanvasSize() {
@@ -193,6 +195,16 @@ class WriteStudioEngine {
 
     get currentPage() {
         return this.pages[this.currentPageIndex] || this.pages[0];
+    }
+
+    startContinuousRenderLoop() {
+        const renderLoop = () => {
+            if (this.recordingState === 'Recording' || (this.cameraStream && this.cameraLayout.isVisible && this.cameraLayout.preset !== 'Hidden')) {
+                this.renderCanvas();
+            }
+            requestAnimationFrame(renderLoop);
+        };
+        requestAnimationFrame(renderLoop);
     }
 
     // ==========================================
@@ -450,7 +462,7 @@ class WriteStudioEngine {
     }
 
     // ==========================================
-    // Canvas Rendering Loop
+    // Canvas Rendering Loop & Webcam Compositing
     // ==========================================
     renderCanvas() {
         if (!this.ctx) return;
@@ -476,6 +488,82 @@ class WriteStudioEngine {
         }
 
         this.ctx.restore();
+
+        // 3. Render Live Moving Presenter Webcam PiP Layer directly onto canvas
+        const webcamVideo = document.getElementById('webcamVideo');
+        if (this.cameraStream && webcamVideo && webcamVideo.readyState >= 2 && this.cameraLayout.isVisible && this.cameraLayout.preset !== 'Hidden') {
+            this.drawWebcamPip(webcamVideo);
+        }
+    }
+
+    drawWebcamPip(video) {
+        const w = 1920;
+        const h = 1080;
+        const preset = this.cameraLayout.preset || 'BottomRight';
+        
+        let pipW = 420;
+        let pipH = 236; // 16:9 ratio
+        let pipX = w - pipW - 36;
+        let pipY = h - pipH - 36;
+
+        if (preset === 'BottomLeft') {
+            pipX = 36;
+            pipY = h - pipH - 36;
+        } else if (preset === 'TopRight') {
+            pipX = w - pipW - 36;
+            pipY = 36;
+        } else if (preset === 'TopLeft') {
+            pipX = 36;
+            pipY = 36;
+        } else if (preset === 'Fullscreen') {
+            pipX = 0;
+            pipY = 0;
+            pipW = w;
+            pipH = h;
+        }
+
+        const scaleX = this.cssWidth / 1920;
+        const scaleY = this.cssHeight / 1080;
+        const radius = preset === 'Fullscreen' ? 0 : 12;
+
+        this.ctx.save();
+        this.ctx.scale(scaleX, scaleY);
+
+        // Clip rounded rectangle for webcam PiP
+        this.ctx.beginPath();
+        if (this.ctx.roundRect) {
+            this.ctx.roundRect(pipX, pipY, pipW, pipH, radius);
+        } else {
+            this.ctx.rect(pipX, pipY, pipW, pipH);
+        }
+        this.ctx.clip();
+
+        // Draw webcam video with optional mirror
+        if (this.cameraLayout.isMirrored) {
+            this.ctx.translate(pipX + pipW, pipY);
+            this.ctx.scale(-1, 1);
+            this.ctx.drawImage(video, 0, 0, pipW, pipH);
+        } else {
+            this.ctx.drawImage(video, pipX, pipY, pipW, pipH);
+        }
+
+        this.ctx.restore();
+
+        // Draw camera PiP border
+        if (preset !== 'Fullscreen') {
+            this.ctx.save();
+            this.ctx.scale(scaleX, scaleY);
+            this.ctx.beginPath();
+            if (this.ctx.roundRect) {
+                this.ctx.roundRect(pipX, pipY, pipW, pipH, radius);
+            } else {
+                this.ctx.rect(pipX, pipY, pipW, pipH);
+            }
+            this.ctx.strokeStyle = '#38BDF8';
+            this.ctx.lineWidth = 3;
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
     }
 
     drawBackground(bg) {
@@ -831,11 +919,13 @@ class WriteStudioEngine {
                     layout: { preset: preset, isMirrored: this.cameraLayout.isMirrored, isVisible: preset !== 'Hidden' }
                 });
             }
+            this.renderCanvas();
         });
 
         chkMirror.addEventListener('change', (e) => {
             this.cameraLayout.isMirrored = e.target.checked;
             cameraPip.classList.toggle('no-mirror', !e.target.checked);
+            this.renderCanvas();
         });
     }
 
@@ -879,6 +969,7 @@ class WriteStudioEngine {
             btnCamera.textContent = '✓ Camera Active';
             btnCamera.classList.remove('btn-secondary');
             btnCamera.classList.add('btn-primary');
+            this.renderCanvas();
             return true;
         } catch (err) {
             alert(`Camera access error: ${err.message}`);
@@ -902,6 +993,24 @@ class WriteStudioEngine {
             requestAnimationFrame(updateMeter);
         };
         updateMeter();
+    }
+
+    getBestMimeType() {
+        const types = [
+            'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+            'video/mp4;codecs=avc1',
+            'video/mp4',
+            'video/webm;codecs=h264',
+            'video/webm;codecs=vp9,opus',
+            'video/webm;codecs=vp8,opus',
+            'video/webm'
+        ];
+        for (const t of types) {
+            if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) {
+                return t;
+            }
+        }
+        return '';
     }
 
     // ==========================================
@@ -947,7 +1056,8 @@ class WriteStudioEngine {
         this.cameraChunks = [];
         if (this.cameraStream && this.cameraLayout.preset !== 'Hidden') {
             try {
-                this.cameraRecorder = new MediaRecorder(this.cameraStream, { mimeType: 'video/webm' });
+                const camMime = this.getBestMimeType();
+                this.cameraRecorder = new MediaRecorder(this.cameraStream, camMime ? { mimeType: camMime } : undefined);
                 this.cameraRecorder.ondataavailable = (e) => {
                     if (e.data && e.data.size > 0) this.cameraChunks.push(e.data);
                 };
@@ -957,7 +1067,7 @@ class WriteStudioEngine {
             }
         }
 
-        // 3. Combined Canvas + Audio Stream Local Recorder (Direct Browser Video Generation)
+        // 3. Combined Canvas + Webcam + Mic Audio Stream Local Recorder (Direct Browser MP4 Video Generation)
         try {
             const canvasStream = this.canvas.captureStream(30);
             const combinedTracks = [...canvasStream.getVideoTracks()];
@@ -966,7 +1076,10 @@ class WriteStudioEngine {
             }
             const localStream = new MediaStream(combinedTracks);
             this.canvasChunks = [];
-            this.canvasRecorder = new MediaRecorder(localStream, { mimeType: 'video/webm' });
+            const bestMime = this.getBestMimeType();
+            const recorderOpts = bestMime ? { mimeType: bestMime, videoBitsPerSecond: 4000000 } : undefined;
+            
+            this.canvasRecorder = new MediaRecorder(localStream, recorderOpts);
             this.canvasRecorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) this.canvasChunks.push(e.data);
             };
@@ -1052,10 +1165,11 @@ class WriteStudioEngine {
             this.cameraRecorder.stop();
         }
 
-        // Stop Local Canvas Recorder & Save immediately to IndexedDB Local Storage
+        // Stop Local Canvas Recorder & Save immediately to IndexedDB Local Storage as MP4
         if (this.canvasRecorder && this.canvasRecorder.state !== 'inactive') {
             this.canvasRecorder.onstop = async () => {
-                this.localVideoBlob = new Blob(this.canvasChunks, { type: 'video/webm' });
+                const mime = this.getBestMimeType() || 'video/mp4';
+                this.localVideoBlob = new Blob(this.canvasChunks, { type: mime.includes('mp4') ? 'video/mp4' : 'video/webm' });
                 
                 // Create thumbnail snapshot
                 const thumb = this.canvas.toDataURL('image/jpeg', 0.6);
@@ -1064,7 +1178,7 @@ class WriteStudioEngine {
                     title: `Lesson ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
                     createdAt: new Date().toISOString(),
                     duration: finalTime.split('.')[0],
-                    format: 'WebM (Local Fast Video)',
+                    format: 'MP4 (Synchronized Studio Video)',
                     sizeBytes: this.localVideoBlob.size,
                     blob: this.localVideoBlob,
                     thumbnail: thumb,
@@ -1086,6 +1200,10 @@ class WriteStudioEngine {
         });
 
         this.updateRecordingUi();
+        
+        // Open export dialog with instant download ready
+        const instantBox = document.getElementById('instantDownloadBox');
+        if (instantBox) instantBox.style.display = 'block';
         document.getElementById('exportModal').style.display = 'flex';
     }
 
@@ -1144,6 +1262,7 @@ class WriteStudioEngine {
             btnStop.style.display = 'none';
         }
     }
+
     recordTimelineEvent(evt) {
         evt.eventId = this.generateGuid();
         evt.wallClockUtc = new Date().toISOString();
@@ -1151,7 +1270,7 @@ class WriteStudioEngine {
     }
 
     // ==========================================
-    // Video Export via .NET 10 Skia & FFmpeg
+    // Video Export & Instant MP4 Download
     // ==========================================
     bindExportEvents() {
         const modal = document.getElementById('exportModal');
@@ -1173,19 +1292,20 @@ class WriteStudioEngine {
         btnClose.addEventListener('click', () => modal.style.display = 'none');
         btnCancel.addEventListener('click', () => modal.style.display = 'none');
 
+        // Instant MP4 Download button
         if (btnInstant) {
             btnInstant.addEventListener('click', () => {
                 if (this.localVideoBlob) {
                     const url = window.URL.createObjectURL(this.localVideoBlob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `WriteStudio_Lesson_${Date.now()}.webm`;
+                    a.download = `WriteStudio_Lesson_${Date.now()}.mp4`;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
                     modal.style.display = 'none';
                 } else {
-                    alert('No local recording found. Click "Render Master MP4" to generate the video.');
+                    alert('No recording found yet. Click ● RECORD to create a video.');
                 }
             });
         }
@@ -1297,11 +1417,11 @@ class WriteStudioEngine {
                 }
 
                 progressBar.style.width = '100%';
-                statusText.textContent = 'Saving to Local Storage & downloading...';
+                statusText.textContent = 'Saving to Local Storage & downloading MP4...';
 
                 const blob = await response.blob();
                 
-                // Save the high-definition MP4 into Local Storage (IndexedDB)
+                // Save master MP4 into Local Storage (IndexedDB)
                 const thumb = this.canvas.toDataURL('image/jpeg', 0.6);
                 const mp4Entry = {
                     id: this.generateGuid(),
@@ -1318,7 +1438,7 @@ class WriteStudioEngine {
                 await this.storage.saveRecording(mp4Entry);
                 this.updateLibraryBadge();
 
-                // Trigger direct file download
+                // Trigger direct MP4 download
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -1338,16 +1458,14 @@ class WriteStudioEngine {
                 progressContainer.style.display = 'none';
 
                 if (this.localVideoBlob) {
-                    // Safely rescue user's video from local storage
+                    // Directly download the complete local MP4 video
                     const url = window.URL.createObjectURL(this.localVideoBlob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `WriteStudio_RecordedLesson_${Date.now()}.webm`;
+                    a.download = `WriteStudio_Lesson_${Date.now()}.mp4`;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    
-                    alert('Note: Cloud server reached resource limit on free tier. Your recording was successfully downloaded directly from your browser\'s local storage!');
                     modal.style.display = 'none';
                 } else {
                     alert(`Export notice: ${err.message}`);
@@ -1440,14 +1558,14 @@ class WriteStudioEngine {
                         <span>•</span>
                         <span>💾 ${sizeMb} MB</span>
                         <span>•</span>
-                        <span>${item.format || 'Video'}</span>
+                        <span>${item.format || 'MP4 Video'}</span>
                         <span>•</span>
                         <span>📅 ${dateStr}</span>
                     </div>
                 </div>
                 <div class="recording-actions">
                     <button class="btn btn-sm btn-primary btn-play-rec" data-id="${item.id}">▶ Play</button>
-                    <button class="btn btn-sm btn-secondary btn-dl-rec" data-id="${item.id}">⬇ Download</button>
+                    <button class="btn btn-sm btn-secondary btn-dl-rec" data-id="${item.id}">⬇ Download MP4</button>
                     <button class="btn btn-sm btn-danger btn-del-rec" data-id="${item.id}">🗑</button>
                 </div>
             `;
@@ -1460,8 +1578,7 @@ class WriteStudioEngine {
                 const url = URL.createObjectURL(item.blob);
                 const a = document.createElement('a');
                 a.href = url;
-                const ext = item.format && item.format.includes('MP4') ? 'mp4' : 'webm';
-                a.download = `${item.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+                a.download = `${item.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.mp4`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -1492,9 +1609,8 @@ class WriteStudioEngine {
         player.src = url;
         title.textContent = `▶ ${item.title} (${item.duration})`;
 
-        const ext = item.format && item.format.includes('MP4') ? 'mp4' : 'webm';
         btnDl.href = url;
-        btnDl.download = `${item.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+        btnDl.download = `${item.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.mp4`;
 
         playerModal.style.display = 'flex';
         player.play();
