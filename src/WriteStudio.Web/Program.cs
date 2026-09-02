@@ -13,7 +13,17 @@ using WriteStudio.Storage;
 using WriteStudio.Whiteboard;
 using WriteStudio.Whiteboard.UndoRedo;
 
-var builder = WebApplication.CreateBuilder(args);
+// Disable inotify FileSystemWatcher for restricted Linux container environments (Render/Kubernetes)
+Environment.SetEnvironmentVariable("DOTNET_USE_POLLING_FILE_WATCHER", "true");
+Environment.SetEnvironmentVariable("DOTNET_SYSTEM_IO_DISABLEFILEWATCHING", "true");
+
+var builderOptions = new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory
+};
+
+var builder = WebApplication.CreateBuilder(builderOptions);
 
 // Configure JSON serialization to handle enum strings and polymorphic timeline events
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -50,7 +60,8 @@ app.MapGet("/api/status", async (IFFmpegService ffmpeg) =>
         ffmpegAvailable = available,
         ffmpegPath = ffmpeg.FFmpegPath,
         serverTime = DateTime.UtcNow,
-        appVersion = "1.0.0"
+        appVersion = "1.0.0",
+        status = "Healthy"
     });
 });
 

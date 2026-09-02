@@ -27,10 +27,12 @@ RUN apt-get update && \
 # Copy published application
 COPY --from=build /app/publish .
 
-# Environment configuration
+# Environment configuration for Render and Linux containers
 ENV PORT=8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV DOTNET_USE_POLLING_FILE_WATCHER=true
+ENV DOTNET_SYSTEM_IO_DISABLEFILEWATCHING=true
 
 EXPOSE 8080
 
