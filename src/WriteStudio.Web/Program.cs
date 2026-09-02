@@ -33,6 +33,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
+var startTimeUtc = DateTime.UtcNow;
+
 // Register WriteStudio Core Services
 builder.Services.AddSingleton<IRecordingClock, RecordingClock>();
 builder.Services.AddSingleton<IUndoRedoManager, UndoRedoManager>();
@@ -45,13 +47,51 @@ builder.Services.AddSingleton<IFFmpegService, FFmpegService>();
 builder.Services.AddSingleton<IRenderingService, RenderingService>();
 builder.Services.AddSingleton<IProjectStorageService, ProjectStorageService>();
 builder.Services.AddSingleton<IRecoveryService, CrashRecoveryManager>();
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// API: Check FFmpeg and system status
+// 1. Standard Health Check Endpoint (JSON)
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "Healthy",
+    service = "WriteStudio",
+    version = "1.0.0",
+    timestamp = DateTime.UtcNow,
+    uptime = (DateTime.UtcNow - startTimeUtc).ToString(@"d\.hh\:mm\:ss")
+}));
+
+// 2. Kubernetes / Docker Liveness Probe Endpoint (Plain Text)
+app.MapGet("/healthz", () => Results.Text("Healthy", "text/plain"));
+
+// 3. Detailed Diagnostic Health Endpoint
+app.MapGet("/api/health", async (IFFmpegService ffmpeg) =>
+{
+    bool ffmpegOk = await ffmpeg.ProbeFFmpegAsync();
+    var process = System.Diagnostics.Process.GetCurrentProcess();
+    long memoryUsedMb = process.WorkingSet64 / (1024 * 1024);
+
+    return Results.Ok(new
+    {
+        status = "Healthy",
+        service = "WriteStudio",
+        version = "1.0.0",
+        environment = app.Environment.EnvironmentName,
+        serverTimeUtc = DateTime.UtcNow,
+        uptime = (DateTime.UtcNow - startTimeUtc).ToString(@"d\.hh\:mm\:ss"),
+        memoryWorkingSetMb = memoryUsedMb,
+        ffmpeg = new
+        {
+            available = ffmpegOk,
+            path = ffmpeg.FFmpegPath ?? "not found"
+        }
+    });
+});
+
+// API: Check FFmpeg and system status (legacy compatibility)
 app.MapGet("/api/status", async (IFFmpegService ffmpeg) =>
 {
     bool available = await ffmpeg.ProbeFFmpegAsync();
