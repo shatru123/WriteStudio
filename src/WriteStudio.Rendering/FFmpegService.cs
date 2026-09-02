@@ -88,14 +88,17 @@ public class FFmpegService : IFFmpegService
         string outputFilePath,
         string? webcamFilePath = null,
         CameraLayout? cameraLayout = null,
-        int videoBitrateKbps = 4000,
-        int audioBitrateKbps = 192,
+        int videoBitrateKbps = 3500,
+        int audioBitrateKbps = 160,
         string videoCodec = "libx264",
         string audioCodec = "aac",
-        string preset = "fast",
-        int crf = 18)
+        string preset = "ultrafast",
+        int crf = 22)
     {
         var args = new System.Text.StringBuilder();
+
+        // Threads optimization
+        args.Append("-threads 0 ");
 
         // Input 0: Raw BGRA whiteboard frames from pipe:0
         args.Append($"-f rawvideo -pix_fmt bgra -s {width}x{height} -r {fps} -i pipe:0 ");
@@ -155,7 +158,7 @@ public class FFmpegService : IFFmpegService
             args.Append($"-c:a {audioCodec} -b:a {audioBitrateKbps}k ");
         }
 
-        // Video codec & quality settings
+        // Ultra-fast video codec & quality settings
         args.Append($"-c:v {videoCodec} -preset {preset} -crf {crf} -pix_fmt yuv420p ");
 
         if (hasAudio || hasWebcam)

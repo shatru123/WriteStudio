@@ -9,6 +9,7 @@ public class SkiaFrameRenderer : IDisposable
     private readonly int _height;
     private readonly SKBitmap _bitmap;
     private readonly SKCanvas _canvas;
+    private readonly byte[] _frameBuffer;
     private bool _isDisposed;
 
     public int Width => _width;
@@ -20,6 +21,7 @@ public class SkiaFrameRenderer : IDisposable
         _height = height;
         _bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
         _canvas = new SKCanvas(_bitmap);
+        _frameBuffer = new byte[width * height * 4];
     }
 
     public byte[] RenderFrame(WhiteboardRenderState state, double sourceCanvasWidth = 1920, double sourceCanvasHeight = 1080)
@@ -51,7 +53,10 @@ public class SkiaFrameRenderer : IDisposable
         }
 
         _canvas.Flush();
-        return _bitmap.Bytes;
+
+        // Copy directly to reusable frameBuffer
+        _bitmap.GetPixelSpan().CopyTo(_frameBuffer);
+        return _frameBuffer;
     }
 
     private void RenderBackground(BackgroundStyle background)
@@ -89,38 +94,38 @@ public class SkiaFrameRenderer : IDisposable
         }
     }
 
-    private void DrawGrid(SKColor gridColor, float spacing)
+    private void DrawGrid(SKColor color, int spacing)
     {
         using var paint = new SKPaint
         {
-            Color = gridColor,
-            StrokeWidth = 1,
-            IsAntialias = true,
+            Color = color,
+            StrokeWidth = 1.0f,
+            IsAntialias = false,
             Style = SKPaintStyle.Stroke
         };
 
-        for (float x = 0; x < _width; x += spacing)
+        for (int x = 0; x < _width; x += spacing)
         {
             _canvas.DrawLine(x, 0, x, _height, paint);
         }
 
-        for (float y = 0; y < _height; y += spacing)
+        for (int y = 0; y < _height; y += spacing)
         {
             _canvas.DrawLine(0, y, _width, y, paint);
         }
     }
 
-    private void DrawRuledLines(SKColor lineColor, float spacing)
+    private void DrawRuledLines(SKColor color, int spacing)
     {
         using var paint = new SKPaint
         {
-            Color = lineColor,
+            Color = color,
             StrokeWidth = 1.2f,
-            IsAntialias = true,
+            IsAntialias = false,
             Style = SKPaintStyle.Stroke
         };
 
-        for (float y = 80; y < _height; y += spacing)
+        for (int y = 80; y < _height; y += spacing)
         {
             _canvas.DrawLine(0, y, _width, y, paint);
         }
@@ -128,116 +133,104 @@ public class SkiaFrameRenderer : IDisposable
 
     private void RenderStroke(DrawingStroke stroke)
     {
-        if (stroke.Points.Count == 0 && stroke.ToolType != StrokeToolType.Text)
-            return;
+        if (stroke.Points == null || stroke.Points.Count == 0) return;
 
-        var color = new SKColor(stroke.Color.R, stroke.Color.G, stroke.Color.B, (byte)(stroke.Color.A * stroke.Opacity));
+        var skColor = new SKColor(stroke.Color.R, stroke.Color.G, stroke.Color.B, (byte)(stroke.Color.A * stroke.Opacity));
+
+        if (stroke.ToolType == StrokeToolType.Text && !string.IsNullOrWhiteSpace(stroke.TextContent))
+        {
+            using var textPaint = new SKPaint
+            {
+                Color = skColor,
+                TextSize = (float)stroke.FontSize,
+                IsAntialias = true,
+                Typeface = SKTypeface.FromFamilyName(stroke.FontFamily ?? "sans-serif")
+            };
+            var p0 = stroke.Points[0];
+            _canvas.DrawText(stroke.TextContent, (float)p0.X, (float)p0.Y, textPaint);
+            return;
+        }
 
         using var paint = new SKPaint
         {
-            Color = color,
+            Color = skColor,
             StrokeWidth = (float)stroke.Thickness,
-            IsAntialias = true,
             StrokeCap = SKStrokeCap.Round,
             StrokeJoin = SKStrokeJoin.Round,
+            IsAntialias = true,
             Style = SKPaintStyle.Stroke
         };
 
-        if (stroke.IsHighlighter)
+        if (stroke.ToolType == StrokeToolType.Highlighter)
         {
             paint.BlendMode = SKBlendMode.SrcOver;
         }
 
-        if (stroke.ToolType == StrokeToolType.Text && !string.IsNullOrEmpty(stroke.TextContent))
-        {
-            paint.Style = SKPaintStyle.Fill;
-            paint.TextSize = (float)stroke.FontSize;
-            if (stroke.Points.Count > 0)
-            {
-                _canvas.DrawText(stroke.TextContent, (float)stroke.Points[0].X, (float)stroke.Points[0].Y, paint);
-            }
-            return;
-        }
-
         if (stroke.Points.Count == 1)
         {
-            paint.Style = SKPaintStyle.Fill;
-            _canvas.DrawCircle((float)stroke.Points[0].X, (float)stroke.Points[0].Y, (float)(stroke.Thickness / 2.0), paint);
+            var p = stroke.Points[0];
+            using var dotPaint = new SKPaint
+            {
+                Color = skColor,
+                Style = SKPaintStyle.Fill,
+                IsAntialias = true
+            };
+            _canvas.DrawCircle((float)p.X, (float)p.Y, (float)(stroke.Thickness / 2.0), dotPaint);
             return;
         }
 
-        // Connect points with pressure sensitivity
-        for (int i = 0; i < stroke.Points.Count - 1; i++)
+        using var path = new SKPath();
+        path.MoveTo((float)stroke.Points[0].X, (float)stroke.Points[0].Y);
+
+        for (int i = 1; i < stroke.Points.Count; i++)
         {
-            var p1 = stroke.Points[i];
-            var p2 = stroke.Points[i + 1];
-
-            float avgPressure = (p1.Pressure + p2.Pressure) / 2.0f;
-            paint.StrokeWidth = (float)(stroke.Thickness * (0.5 + 0.8 * avgPressure));
-
-            _canvas.DrawLine((float)p1.X, (float)p1.Y, (float)p2.X, (float)p2.Y, paint);
+            var p = stroke.Points[i];
+            path.LineTo((float)p.X, (float)p.Y);
         }
+
+        _canvas.DrawPath(path, paint);
     }
 
     private void RenderWebcamLayer(CameraLayout layout)
     {
-        float x = (float)(layout.NormalizedX * _width);
-        float y = (float)(layout.NormalizedY * _height);
-        float w = (float)(layout.NormalizedWidth * _width);
-        float h = (float)(layout.NormalizedHeight * _height);
-        float radius = (float)layout.CornerRadius;
+        float pipW = (float)(_width * layout.NormalizedWidth);
+        float pipH = (float)(_height * layout.NormalizedHeight);
+        float pipX = (float)(_width * layout.NormalizedX);
+        float pipY = (float)(_height * layout.NormalizedY);
 
-        var rect = new SKRect(x, y, x + w, y + h);
+        var rect = new SKRect(pipX, pipY, pipX + pipW, pipY + pipH);
 
+        // Draw camera frame placeholder
         using var bgPaint = new SKPaint
         {
-            Color = new SKColor(18, 24, 38),
+            Color = new SKColor(15, 23, 42, 230),
             Style = SKPaintStyle.Fill,
             IsAntialias = true
         };
 
-        using var borderPaint = new SKPaint
-        {
-            Color = new SKColor(52, 131, 235),
-            StrokeWidth = (float)layout.BorderThickness,
-            Style = SKPaintStyle.Stroke,
-            IsAntialias = true
-        };
+        _canvas.DrawRoundRect(rect, (float)layout.CornerRadius, (float)layout.CornerRadius, bgPaint);
 
-        if (radius > 0)
+        if (layout.HasBorder)
         {
-            _canvas.DrawRoundRect(rect, radius, radius, bgPaint);
-            if (layout.HasBorder)
+            using var borderPaint = new SKPaint
             {
-                _canvas.DrawRoundRect(rect, radius, radius, borderPaint);
-            }
+                Color = new SKColor(56, 189, 248),
+                StrokeWidth = (float)layout.BorderThickness,
+                Style = SKPaintStyle.Stroke,
+                IsAntialias = true
+            };
+            _canvas.DrawRoundRect(rect, (float)layout.CornerRadius, (float)layout.CornerRadius, borderPaint);
         }
-        else
-        {
-            _canvas.DrawRect(rect, bgPaint);
-            if (layout.HasBorder)
-            {
-                _canvas.DrawRect(rect, borderPaint);
-            }
-        }
-
-        // Render simulated camera watermark / avatar text in PiP
-        using var textPaint = new SKPaint
-        {
-            Color = SKColors.LightGray,
-            TextSize = Math.Max(12, h * 0.12f),
-            IsAntialias = true,
-            TextAlign = SKTextAlign.Center
-        };
-
-        _canvas.DrawText("Presenter Camera", rect.MidX, rect.MidY, textPaint);
     }
 
     public void Dispose()
     {
-        if (_isDisposed) return;
-        _canvas.Dispose();
-        _bitmap.Dispose();
-        _isDisposed = true;
+        if (!_isDisposed)
+        {
+            _canvas.Dispose();
+            _bitmap.Dispose();
+            _isDisposed = true;
+        }
+        GC.SuppressFinalize(this);
     }
 }

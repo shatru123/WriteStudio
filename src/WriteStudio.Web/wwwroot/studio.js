@@ -1033,14 +1033,19 @@ class WriteStudioEngine {
                 durationStr = '00:00:05.000';
             }
 
+            const resVal = document.getElementById('exportResolution').value.split('x');
+            const targetW = parseInt(resVal[0], 10) || 1280;
+            const targetH = parseInt(resVal[1], 10) || 720;
+            const targetFps = parseInt(document.getElementById('exportFps').value, 10) || 30;
+
             const payload = {
                 sessionId: this.generateGuid(),
                 metadata: {
                     title: 'Interactive Studio Lesson',
                     author: 'Presenter',
-                    canvasWidth: 1920,
-                    canvasHeight: 1080,
-                    targetFps: 30,
+                    canvasWidth: targetW,
+                    canvasHeight: targetH,
+                    targetFps: targetFps,
                     duration: durationStr,
                     totalPages: this.pages.length,
                     hasAudioTrack: !!this.recordedAudioBlob,

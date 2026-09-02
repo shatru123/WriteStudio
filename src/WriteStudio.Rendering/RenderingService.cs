@@ -86,8 +86,8 @@ public class RenderingService : IRenderingService
                 audioBitrateKbps: settings.AudioBitrateKbps,
                 videoCodec: settings.VideoCodec,
                 audioCodec: settings.AudioCodec,
-                preset: settings.Preset,
-                crf: settings.Crf
+                preset: string.IsNullOrEmpty(settings.Preset) || settings.Preset == "fast" ? "ultrafast" : settings.Preset,
+                crf: settings.Crf > 0 ? settings.Crf : 22
             );
 
             _logger?.LogInformation("Starting FFmpeg with arguments: {Args}", ffmpegArgs);
@@ -120,6 +120,11 @@ public class RenderingService : IRenderingService
 
             bool hasLiveWebcamFile = !string.IsNullOrEmpty(webcamPath) && File.Exists(webcamPath);
 
+            int lastStrokeCount = -1;
+            int lastTotalPoints = -1;
+            BackgroundStyle lastBg = (BackgroundStyle)(-1);
+            byte[]? cachedFrameBytes = null;
+
             for (int frameIdx = 0; frameIdx < totalFrames; frameIdx++)
             {
                 _renderCts.Token.ThrowIfCancellationRequested();
@@ -129,22 +134,39 @@ public class RenderingService : IRenderingService
 
                 var renderState = reconstructor.ReconstructAt(currentTimestamp);
 
-                // If real webcam video file is being composited by FFmpeg filter complex,
-                // suppress the static placeholder from the whiteboard bitmap frame
                 if (hasLiveWebcamFile)
                 {
                     renderState = renderState with { CameraLayout = CameraLayout.HiddenLayout };
                 }
 
-                byte[] rawFrameBytes = frameRenderer.RenderFrame(
-                    renderState,
-                    session.Metadata.CanvasWidth,
-                    session.Metadata.CanvasHeight
-                );
+                // Check if whiteboard state changed
+                int currentStrokeCount = renderState.VisibleStrokes.Count;
+                int currentTotalPoints = 0;
+                for (int s = 0; s < currentStrokeCount; s++)
+                {
+                    currentTotalPoints += renderState.VisibleStrokes[s].Points.Count;
+                }
 
-                await stdin.WriteAsync(rawFrameBytes, 0, rawFrameBytes.Length, _renderCts.Token);
+                bool stateChanged = cachedFrameBytes == null ||
+                                    currentStrokeCount != lastStrokeCount ||
+                                    currentTotalPoints != lastTotalPoints ||
+                                    renderState.Background != lastBg;
 
-                if (frameIdx % 10 == 0 || frameIdx == totalFrames - 1)
+                if (stateChanged)
+                {
+                    cachedFrameBytes = frameRenderer.RenderFrame(
+                        renderState,
+                        session.Metadata.CanvasWidth,
+                        session.Metadata.CanvasHeight
+                    );
+                    lastStrokeCount = currentStrokeCount;
+                    lastTotalPoints = currentTotalPoints;
+                    lastBg = renderState.Background;
+                }
+
+                await stdin.WriteAsync(cachedFrameBytes!, 0, cachedFrameBytes!.Length, _renderCts.Token);
+
+                if (frameIdx % 15 == 0 || frameIdx == totalFrames - 1)
                 {
                     double percent = ((double)(frameIdx + 1) / totalFrames) * 100.0;
                     double elapsedSec = stopwatch.Elapsed.TotalSeconds;
@@ -176,7 +198,8 @@ public class RenderingService : IRenderingService
                 throw new InvalidOperationException($"FFmpeg export failed with exit code {process.ExitCode}: {error}");
             }
 
-            _logger?.LogInformation("Export completed successfully: {Path}", settings.OutputFilePath);
+            _logger?.LogInformation("Export completed in {Elapsed}s at {Fps:F1} FPS: {Path}", 
+                stopwatch.Elapsed.TotalSeconds, totalFrames / Math.Max(0.01, stopwatch.Elapsed.TotalSeconds), settings.OutputFilePath);
             return true;
         }
         catch (OperationCanceledException)
