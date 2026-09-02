@@ -691,3 +691,131 @@ body {
     gap: 8px;
     border-top: 1px solid #1E293B;
 }
+
+/* Modal sizing */
+.modal-lg {
+    width: 680px;
+    max-width: 90vw;
+}
+
+.modal-video {
+    width: 800px;
+    max-width: 92vw;
+}
+
+.video-player-body {
+    padding: 0;
+    background: #000;
+    display: flex;
+    justify-content: center;
+}
+
+.library-video-player {
+    width: 100%;
+    max-height: 480px;
+    outline: none;
+}
+
+/* Library List */
+.btn-library {
+    background: #1E293B;
+    border: 1px solid #38BDF8;
+    color: #38BDF8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.btn-library:hover {
+    background: #2563EB;
+    color: #FFF;
+    border-color: #2563EB;
+}
+
+.library-badge {
+    background: #2563EB;
+    color: #FFF;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+}
+
+.library-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1E293B;
+}
+
+.storage-info-text {
+    font-size: 11px;
+    color: #94A3B8;
+}
+
+.recordings-list {
+    max-height: 380px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.recording-card {
+    display: flex;
+    align-items: center;
+    background: #161B22;
+    border: 1px solid #30363D;
+    border-radius: 8px;
+    padding: 10px;
+    gap: 12px;
+    transition: border-color 0.15s ease;
+}
+
+.recording-card:hover {
+    border-color: #38BDF8;
+}
+
+.recording-thumb {
+    width: 96px;
+    height: 54px;
+    background: #0D1117;
+    border-radius: 4px;
+    object-fit: cover;
+    border: 1px solid #21262D;
+    flex-shrink: 0;
+}
+
+.recording-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.recording-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #F0F6FC;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.recording-details {
+    font-size: 11px;
+    color: #8B949E;
+    margin-top: 3px;
+    display: flex;
+    gap: 8px;
+}
+
+.recording-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.empty-library-notice {
+    text-align: center;
+    padding: 40px 20px;
+}

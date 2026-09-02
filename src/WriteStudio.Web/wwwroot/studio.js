@@ -1,7 +1,106 @@
 // WriteStudio Interactive Web Studio Client Engine
+// Complete with Vector Drawing, Microphone/Camera Recording, and Local Storage / IndexedDB Video Management
 
+// ==========================================
+// IndexedDB Local Storage Manager
+// ==========================================
+class WriteStudioStorage {
+    constructor() {
+        this.dbName = 'WriteStudioDB';
+        this.dbVersion = 1;
+        this.db = null;
+    }
+
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('recordings')) {
+                    const store = db.createObjectStore('recordings', { keyPath: 'id' });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('drafts')) {
+                    db.createObjectStore('drafts', { keyPath: 'id' });
+                }
+            };
+
+            request.onsuccess = (e) => {
+                this.db = e.target.result;
+                resolve(this.db);
+            };
+
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async saveRecording(recording) {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('recordings', 'readwrite');
+            const store = tx.objectStore('recordings');
+            const req = store.put(recording);
+            req.onsuccess = () => resolve(recording);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async getAllRecordings() {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('recordings', 'readonly');
+            const store = tx.objectStore('recordings');
+            const req = store.getAll();
+            req.onsuccess = () => {
+                const results = req.result || [];
+                results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                resolve(results);
+            };
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async getRecording(id) {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('recordings', 'readonly');
+            const store = tx.objectStore('recordings');
+            const req = store.get(id);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async deleteRecording(id) {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('recordings', 'readwrite');
+            const store = tx.objectStore('recordings');
+            const req = store.delete(id);
+            req.onsuccess = () => resolve();
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async clearAllRecordings() {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('recordings', 'readwrite');
+            const store = tx.objectStore('recordings');
+            const req = store.clear();
+            req.onsuccess = () => resolve();
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+}
+
+// ==========================================
+// Main WriteStudio Application Engine
+// ==========================================
 class WriteStudioEngine {
     constructor() {
+        this.storage = new WriteStudioStorage();
         this.canvas = document.getElementById('whiteboardCanvas');
         this.ctx = this.canvas.getContext('2d');
         this.canvasWrapper = document.getElementById('canvasWrapper');
@@ -24,7 +123,7 @@ class WriteStudioEngine {
         this.shapeStartPoint = null;
 
         // Recording & Timeline State
-        this.recordingState = 'Stopped'; // 'Stopped', 'Recording', 'Paused'
+        this.recordingState = 'Stopped';
         this.sessionStartTime = null;
         this.pauseStartTime = null;
         this.totalPausedDuration = 0;
@@ -50,6 +149,11 @@ class WriteStudioEngine {
         this.cameraChunks = [];
         this.recordedCameraBlob = null;
 
+        // Combined in-browser local canvas recorder
+        this.canvasRecorder = null;
+        this.canvasChunks = [];
+        this.localVideoBlob = null;
+
         this.cameraLayout = {
             preset: 'BottomRight',
             isMirrored: true,
@@ -59,7 +163,8 @@ class WriteStudioEngine {
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.storage.init();
         this.setupCanvasSize();
         window.addEventListener('resize', () => this.setupCanvasSize());
 
@@ -69,8 +174,10 @@ class WriteStudioEngine {
         this.bindMediaEvents();
         this.bindRecordingEvents();
         this.bindExportEvents();
+        this.bindLibraryEvents();
 
         this.renderCanvas();
+        this.updateLibraryBadge();
     }
 
     setupCanvasSize() {
@@ -305,7 +412,6 @@ class WriteStudioEngine {
 
     eraseAt(x, y, radius) {
         const page = this.currentPage;
-        const initialCount = page.strokes.length;
         const remaining = [];
         const erased = [];
 
@@ -681,21 +787,17 @@ class WriteStudioEngine {
     // Hardware Audio & Webcam PiP Controls
     // ==========================================
     bindMediaEvents() {
-        // Audio Connect
         const btnAudio = document.getElementById('btnEnableAudio');
-        const audioStatus = document.getElementById('audioStatus');
-
-        btnAudio.addEventListener('click', async () => {
-            await this.enableMicrophone();
-        });
-
-        // Camera Toggle
         const btnCamera = document.getElementById('btnToggleCamera');
         const video = document.getElementById('webcamVideo');
         const camPlaceholder = document.getElementById('camPlaceholder');
         const cameraPip = document.getElementById('cameraPip');
         const layoutSelector = document.getElementById('cameraLayoutSelector');
         const chkMirror = document.getElementById('chkMirror');
+
+        btnAudio.addEventListener('click', async () => {
+            await this.enableMicrophone();
+        });
 
         btnCamera.addEventListener('click', async () => {
             if (this.cameraStream) {
@@ -803,7 +905,7 @@ class WriteStudioEngine {
     }
 
     // ==========================================
-    // Synchronized Recording Engine
+    // Synchronized Recording Engine & Local Storage
     // ==========================================
     bindRecordingEvents() {
         const btnRecord = document.getElementById('btnRecord');
@@ -818,7 +920,6 @@ class WriteStudioEngine {
     }
 
     async startRecording() {
-        // Auto-connect mic if not connected
         if (!this.audioStream) {
             await this.enableMicrophone();
         }
@@ -828,7 +929,7 @@ class WriteStudioEngine {
         this.totalPausedDuration = 0;
         this.timelineEvents = [];
 
-        // Start Audio Recording
+        // 1. Microphone Audio Stream Recorder
         this.audioChunks = [];
         if (this.audioStream) {
             try {
@@ -836,13 +937,13 @@ class WriteStudioEngine {
                 this.audioRecorder.ondataavailable = (e) => {
                     if (e.data && e.data.size > 0) this.audioChunks.push(e.data);
                 };
-                this.audioRecorder.start(250); // collect 250ms chunks
+                this.audioRecorder.start(250);
             } catch (err) {
-                console.warn('Could not start Audio MediaRecorder:', err);
+                console.warn('Audio recorder start warning:', err);
             }
         }
 
-        // Start Camera Video Recording
+        // 2. Camera Video Stream Recorder
         this.cameraChunks = [];
         if (this.cameraStream && this.cameraLayout.preset !== 'Hidden') {
             try {
@@ -852,8 +953,26 @@ class WriteStudioEngine {
                 };
                 this.cameraRecorder.start(250);
             } catch (err) {
-                console.warn('Could not start Camera MediaRecorder:', err);
+                console.warn('Camera recorder start warning:', err);
             }
+        }
+
+        // 3. Combined Canvas + Audio Stream Local Recorder (Direct Browser Video Generation)
+        try {
+            const canvasStream = this.canvas.captureStream(30);
+            const combinedTracks = [...canvasStream.getVideoTracks()];
+            if (this.audioStream && this.audioStream.getAudioTracks().length > 0) {
+                combinedTracks.push(this.audioStream.getAudioTracks()[0]);
+            }
+            const localStream = new MediaStream(combinedTracks);
+            this.canvasChunks = [];
+            this.canvasRecorder = new MediaRecorder(localStream, { mimeType: 'video/webm' });
+            this.canvasRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) this.canvasChunks.push(e.data);
+            };
+            this.canvasRecorder.start(250);
+        } catch (err) {
+            console.warn('Local canvas recorder warning:', err);
         }
 
         this.updateRecordingUi();
@@ -879,6 +998,7 @@ class WriteStudioEngine {
         
         if (this.audioRecorder && this.audioRecorder.state === 'recording') this.audioRecorder.pause();
         if (this.cameraRecorder && this.cameraRecorder.state === 'recording') this.cameraRecorder.pause();
+        if (this.canvasRecorder && this.canvasRecorder.state === 'recording') this.canvasRecorder.pause();
 
         this.updateRecordingUi();
 
@@ -899,6 +1019,7 @@ class WriteStudioEngine {
 
         if (this.audioRecorder && this.audioRecorder.state === 'paused') this.audioRecorder.resume();
         if (this.cameraRecorder && this.cameraRecorder.state === 'paused') this.cameraRecorder.resume();
+        if (this.canvasRecorder && this.canvasRecorder.state === 'paused') this.canvasRecorder.resume();
 
         this.updateRecordingUi();
 
@@ -929,6 +1050,32 @@ class WriteStudioEngine {
                 this.recordedCameraBlob = new Blob(this.cameraChunks, { type: 'video/webm' });
             };
             this.cameraRecorder.stop();
+        }
+
+        // Stop Local Canvas Recorder & Save immediately to IndexedDB Local Storage
+        if (this.canvasRecorder && this.canvasRecorder.state !== 'inactive') {
+            this.canvasRecorder.onstop = async () => {
+                this.localVideoBlob = new Blob(this.canvasChunks, { type: 'video/webm' });
+                
+                // Create thumbnail snapshot
+                const thumb = this.canvas.toDataURL('image/jpeg', 0.6);
+                const recordingEntry = {
+                    id: this.generateGuid(),
+                    title: `Lesson ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+                    createdAt: new Date().toISOString(),
+                    duration: finalTime.split('.')[0],
+                    format: 'WebM (Local Fast Video)',
+                    sizeBytes: this.localVideoBlob.size,
+                    blob: this.localVideoBlob,
+                    thumbnail: thumb,
+                    pages: JSON.parse(JSON.stringify(this.pages)),
+                    events: JSON.parse(JSON.stringify(this.timelineEvents))
+                };
+
+                await this.storage.saveRecording(recordingEntry);
+                this.updateLibraryBadge();
+            };
+            this.canvasRecorder.stop();
         }
 
         this.recordTimelineEvent({
@@ -1100,7 +1247,7 @@ class WriteStudioEngine {
 
             try {
                 progressBar.style.width = '60%';
-                statusText.textContent = 'FFmpeg compositing video & audio tracks (1080p @ 30 FPS)...';
+                statusText.textContent = 'FFmpeg compositing video & audio tracks...';
 
                 const response = await fetch('/api/export', {
                     method: 'POST',
@@ -1113,13 +1260,32 @@ class WriteStudioEngine {
                 }
 
                 progressBar.style.width = '100%';
-                statusText.textContent = 'Download started!';
+                statusText.textContent = 'Saving to Local Storage & downloading...';
 
                 const blob = await response.blob();
+                
+                // Save the high-definition MP4 into Local Storage (IndexedDB)
+                const thumb = this.canvas.toDataURL('image/jpeg', 0.6);
+                const mp4Entry = {
+                    id: this.generateGuid(),
+                    title: `Master HD MP4 — ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+                    createdAt: new Date().toISOString(),
+                    duration: durationStr.split('.')[0],
+                    format: `MP4 (${targetW}x${targetH} @ ${targetFps}fps)`,
+                    sizeBytes: blob.size,
+                    blob: blob,
+                    thumbnail: thumb,
+                    pages: JSON.parse(JSON.stringify(this.pages)),
+                    events: JSON.parse(JSON.stringify(this.timelineEvents))
+                };
+                await this.storage.saveRecording(mp4Entry);
+                this.updateLibraryBadge();
+
+                // Trigger direct file download
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `WriteStudio_Lesson_${Date.now()}.mp4`;
+                a.download = `WriteStudio_Master_${Date.now()}.mp4`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -1128,13 +1294,157 @@ class WriteStudioEngine {
                     modal.style.display = 'none';
                     progressContainer.style.display = 'none';
                     btnStart.disabled = false;
-                }, 1500);
+                }, 1200);
             } catch (err) {
                 alert(`Export error: ${err.message}`);
                 btnStart.disabled = false;
                 progressContainer.style.display = 'none';
             }
         });
+    }
+
+    // ==========================================
+    // 📚 Recordings Library & Local Storage UI
+    // ==========================================
+    bindLibraryEvents() {
+        const btnOpen = document.getElementById('btnOpenLibrary');
+        const modal = document.getElementById('libraryModal');
+        const btnClose = document.getElementById('btnCloseLibrary');
+        const btnCloseFooter = document.getElementById('btnCloseLibraryFooter');
+        const btnClearAll = document.getElementById('btnClearAllRecordings');
+
+        const playerModal = document.getElementById('videoPlayerModal');
+        const btnClosePlayer = document.getElementById('btnClosePlayer');
+        const btnClosePlayerFooter = document.getElementById('btnClosePlayerFooter');
+
+        btnOpen.addEventListener('click', async () => {
+            await this.renderLibrary();
+            modal.style.display = 'flex';
+        });
+
+        btnClose.addEventListener('click', () => modal.style.display = 'none');
+        btnCloseFooter.addEventListener('click', () => modal.style.display = 'none');
+
+        btnClearAll.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to delete all saved recordings from local storage?')) {
+                await this.storage.clearAllRecordings();
+                await this.renderLibrary();
+                this.updateLibraryBadge();
+            }
+        });
+
+        const closePlayer = () => {
+            const player = document.getElementById('libraryVideoPlayer');
+            player.pause();
+            player.src = '';
+            playerModal.style.display = 'none';
+        };
+
+        btnClosePlayer.addEventListener('click', closePlayer);
+        btnClosePlayerFooter.addEventListener('click', closePlayer);
+    }
+
+    async updateLibraryBadge() {
+        try {
+            const list = await this.storage.getAllRecordings();
+            const badge = document.getElementById('libraryBadge');
+            if (badge) badge.textContent = list.length;
+        } catch { }
+    }
+
+    async renderLibrary() {
+        const listContainer = document.getElementById('recordingsList');
+        const emptyNotice = document.getElementById('emptyLibraryNotice');
+        const infoText = document.getElementById('storageInfoText');
+
+        const items = await this.storage.getAllRecordings();
+        this.updateLibraryBadge();
+
+        if (items.length === 0) {
+            listContainer.innerHTML = '';
+            emptyNotice.style.display = 'block';
+            infoText.textContent = 'Stored Locally in Browser: 0 recordings';
+            return;
+        }
+
+        emptyNotice.style.display = 'none';
+        let totalBytes = 0;
+        listContainer.innerHTML = '';
+
+        items.forEach(item => {
+            totalBytes += item.sizeBytes || 0;
+            const sizeMb = ((item.sizeBytes || 0) / (1024 * 1024)).toFixed(1);
+            const dateStr = new Date(item.createdAt).toLocaleString();
+
+            const card = document.createElement('div');
+            card.className = 'recording-card';
+            card.innerHTML = `
+                <img class="recording-thumb" src="${item.thumbnail || ''}" alt="Lesson Thumbnail">
+                <div class="recording-info">
+                    <div class="recording-title">${item.title}</div>
+                    <div class="recording-details">
+                        <span>⏱ ${item.duration}</span>
+                        <span>•</span>
+                        <span>💾 ${sizeMb} MB</span>
+                        <span>•</span>
+                        <span>${item.format || 'Video'}</span>
+                        <span>•</span>
+                        <span>📅 ${dateStr}</span>
+                    </div>
+                </div>
+                <div class="recording-actions">
+                    <button class="btn btn-sm btn-primary btn-play-rec" data-id="${item.id}">▶ Play</button>
+                    <button class="btn btn-sm btn-secondary btn-dl-rec" data-id="${item.id}">⬇ Download</button>
+                    <button class="btn btn-sm btn-danger btn-del-rec" data-id="${item.id}">🗑</button>
+                </div>
+            `;
+
+            // Play Video
+            card.querySelector('.btn-play-rec').addEventListener('click', () => this.playStoredVideo(item));
+
+            // Download Video
+            card.querySelector('.btn-dl-rec').addEventListener('click', () => {
+                const url = URL.createObjectURL(item.blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const ext = item.format && item.format.includes('MP4') ? 'mp4' : 'webm';
+                a.download = `${item.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            });
+
+            // Delete Video
+            card.querySelector('.btn-del-rec').addEventListener('click', async () => {
+                if (confirm(`Delete "${item.title}" from local storage?`)) {
+                    await this.storage.deleteRecording(item.id);
+                    await this.renderLibrary();
+                }
+            });
+
+            listContainer.appendChild(card);
+        });
+
+        const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
+        infoText.textContent = `Stored Locally in Browser: ${items.length} recordings (${totalMb} MB used)`;
+    }
+
+    playStoredVideo(item) {
+        const playerModal = document.getElementById('videoPlayerModal');
+        const player = document.getElementById('libraryVideoPlayer');
+        const title = document.getElementById('playerModalTitle');
+        const btnDl = document.getElementById('btnDownloadCurrentVideo');
+
+        const url = URL.createObjectURL(item.blob);
+        player.src = url;
+        title.textContent = `▶ ${item.title} (${item.duration})`;
+
+        const ext = item.format && item.format.includes('MP4') ? 'mp4' : 'webm';
+        btnDl.href = url;
+        btnDl.download = `${item.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+
+        playerModal.style.display = 'flex';
+        player.play();
     }
 
     // Utilities

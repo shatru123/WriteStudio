@@ -16,6 +16,10 @@
         </div>
 
         <div class="header-right">
+            <button id="btnOpenLibrary" class="btn btn-sm btn-secondary btn-library" title="Open saved recordings stored in browser local storage">
+                📚 My Recordings <span id="libraryBadge" class="library-badge">0</span>
+            </button>
+
             <div class="creator-badge" title="Author Information">
                 <span class="creator-icon">👨‍💻</span>
                 <span class="creator-name">Created by <strong>Shatrughna Ambhore</strong></span>
@@ -248,6 +252,52 @@
             <div class="modal-footer">
                 <button id="btnCancelExport" class="btn btn-secondary">Close</button>
                 <button id="btnStartExport" class="btn btn-primary">Start Export & Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📚 Recordings Library Modal (Local Storage / IndexedDB) -->
+    <div id="libraryModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <h3>📚 Local Recordings Library (Stored in Browser)</h3>
+                <button id="btnCloseLibrary" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="library-header-bar">
+                    <div id="storageInfoText" class="storage-info-text">Stored Locally in Browser: 0 recordings</div>
+                    <button id="btnClearAllRecordings" class="btn btn-sm btn-danger">Clear All</button>
+                </div>
+                
+                <div id="recordingsList" class="recordings-list">
+                    <!-- Populated dynamically by studio.js -->
+                </div>
+
+                <div id="emptyLibraryNotice" class="empty-library-notice">
+                    <div style="font-size:36px; margin-bottom:8px">📼</div>
+                    <div style="font-weight:600; color:#94A3B8">No recordings saved in local storage yet</div>
+                    <div style="font-size:11px; color:#64748B; margin-top:4px">Click ● RECORD to start teaching. All recorded lessons are automatically saved right in your browser!</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnCloseLibraryFooter" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🎥 Video Player Modal -->
+    <div id="videoPlayerModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog modal-video">
+            <div class="modal-header">
+                <h3 id="playerModalTitle">▶ Play Recorded Lesson</h3>
+                <button id="btnClosePlayer" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body video-player-body">
+                <video id="libraryVideoPlayer" controls autoplay class="library-video-player"></video>
+            </div>
+            <div class="modal-footer">
+                <a id="btnDownloadCurrentVideo" class="btn btn-primary" download="lesson.mp4">⬇ Download Video</a>
+                <button id="btnClosePlayerFooter" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>
