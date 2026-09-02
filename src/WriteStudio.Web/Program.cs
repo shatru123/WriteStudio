@@ -213,9 +213,10 @@ app.MapPost("/api/projects/save", async (
     return Results.Ok(new { success = true, path = targetDir });
 });
 
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
 Console.WriteLine("===================================================================");
 Console.WriteLine("  WriteStudio Web Server Running!");
-Console.WriteLine("  Open: http://localhost:5000 in your browser to start recording");
+Console.WriteLine($"  Listening on: http://0.0.0.0:{port}");
 Console.WriteLine("===================================================================");
 
-app.Run("http://localhost:5000");
+app.Run($"http://0.0.0.0:{port}");

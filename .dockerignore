@@ -1,0 +1,12 @@
+.git
+.gitignore
+.dotnet
+.dotnet_home
+.local
+Library
+bin/
+obj/
+exports/
+tests/
+*.log
+*.tmp
