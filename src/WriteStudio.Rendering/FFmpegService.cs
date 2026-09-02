@@ -97,8 +97,8 @@ public class FFmpegService : IFFmpegService
     {
         var args = new System.Text.StringBuilder();
 
-        // Threads optimization
-        args.Append("-threads 0 ");
+        // Quiet logging and multi-threading
+        args.Append("-loglevel warning -nostats -threads 0 ");
 
         // Input 0: Raw BGRA whiteboard frames from pipe:0
         args.Append($"-f rawvideo -pix_fmt bgra -s {width}x{height} -r {fps} -i pipe:0 ");

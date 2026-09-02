@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using WriteStudio.Core.Abstractions;
 using WriteStudio.Core.Models;
@@ -105,6 +106,21 @@ public class RenderingService : IRenderingService
             using var process = Process.Start(psi) 
                 ?? throw new InvalidOperationException("Failed to start FFmpeg process.");
 
+            // Asynchronously consume stderr to prevent buffer deadlocks
+            var stderrBuffer = new StringBuilder();
+            process.ErrorDataReceived += (s, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lock (stderrBuffer)
+                    {
+                        if (stderrBuffer.Length < 8000)
+                            stderrBuffer.AppendLine(e.Data);
+                    }
+                }
+            };
+            process.BeginErrorReadLine();
+
             using var frameRenderer = new SkiaFrameRenderer(settings.Width, settings.Height);
 
             double totalSeconds = session.Metadata.Duration.TotalSeconds;
@@ -190,12 +206,16 @@ public class RenderingService : IRenderingService
             await stdin.FlushAsync(_renderCts.Token);
             stdin.Close();
 
-            await process.WaitForExitAsync(_renderCts.Token);
+            // Wait for FFmpeg to finish encoding with a reasonable timeout
+            using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_renderCts.Token, exitCts.Token);
+            await process.WaitForExitAsync(linkedCts.Token);
 
             if (process.ExitCode != 0)
             {
-                string error = await process.StandardError.ReadToEndAsync();
-                throw new InvalidOperationException($"FFmpeg export failed with exit code {process.ExitCode}: {error}");
+                string errorText;
+                lock (stderrBuffer) { errorText = stderrBuffer.ToString(); }
+                throw new InvalidOperationException($"FFmpeg export failed with exit code {process.ExitCode}: {errorText}");
             }
 
             _logger?.LogInformation("Export completed in {Elapsed}s at {Fps:F1} FPS: {Path}", 
@@ -204,7 +224,7 @@ public class RenderingService : IRenderingService
         }
         catch (OperationCanceledException)
         {
-            _logger?.LogWarning("Export was cancelled by user.");
+            _logger?.LogWarning("Export was cancelled or timed out.");
             return false;
         }
         catch (Exception ex)
