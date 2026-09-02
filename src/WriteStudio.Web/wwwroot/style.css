@@ -53,9 +53,66 @@ body {
     letter-spacing: -0.3px;
 }
 
-.logo-tagline {
-    font-size: 12px;
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.creator-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid #334155;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #94A3B8;
+}
+
+.creator-badge strong {
+    color: #F1F5F9;
+}
+
+.creator-link {
+    color: #38BDF8;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.creator-link:hover {
+    color: #7DD3FC;
+    text-decoration: underline;
+}
+
+.creator-sep {
+    color: #475569;
+}
+
+.creator-bottom-bar {
+    height: 22px;
+    background-color: #05070B;
+    border-top: 1px solid #141B26;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
     color: #64748B;
+    letter-spacing: 0.2px;
+}
+
+.creator-bottom-bar a {
+    color: #38BDF8;
+    text-decoration: none;
+}
+
+.creator-bottom-bar a:hover {
+    text-decoration: underline;
+}
+
+.creator-bottom-bar strong {
+    color: #CBD5E1;
 }
 
 .recording-pill {

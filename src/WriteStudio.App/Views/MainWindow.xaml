@@ -358,5 +358,14 @@
                 </Border>
             </Grid>
         </Border>
+
+        <!-- FOOTER: Creator Credits -->
+        <Border Grid.Row="3" Background="#07090E" Padding="16,4" BorderBrush="#141B26" BorderThickness="0,1,0,0">
+            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" Foreground="#64748B">
+                <Run Text="WriteStudio • Created by "/>
+                <Run Text="Shatrughna Ambhore" FontWeight="SemiBold" Foreground="#94A3B8"/>
+                <Run Text=" • ambhoreshatrughna@gmail.com • +91 9604466334"/>
+            </TextBlock>
+        </Border>
     </Grid>
 </Window>

@@ -114,6 +114,15 @@ dotnet run --project src/WriteStudio.App/WriteStudio.App.csproj
 
 ---
 
+## 👤 Author & Creator
+
+**Shatrughna Ambhore**
+* 📧 **Email**: [ambhoreshatrughna@gmail.com](mailto:ambhoreshatrughna@gmail.com)
+* 📱 **Phone**: [+91 9604466334](tel:+919604466334)
+* 🐙 **GitHub**: [@shatru123](https://github.com/shatru123)
+
+---
+
 ## 📜 License
 
 This project is licensed under the [MIT License](LICENSE).
