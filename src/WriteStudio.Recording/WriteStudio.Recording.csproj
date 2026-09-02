@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>WriteStudio.Recording</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WriteStudio.Core\WriteStudio.Core.csproj" />
+    <ProjectReference Include="..\WriteStudio.Whiteboard\WriteStudio.Whiteboard.csproj" />
+    <ProjectReference Include="..\WriteStudio.Audio\WriteStudio.Audio.csproj" />
+    <ProjectReference Include="..\WriteStudio.Camera\WriteStudio.Camera.csproj" />
+  </ItemGroup>
+</Project>

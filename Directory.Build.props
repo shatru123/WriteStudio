@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Authors>WriteStudio Team</Authors>
+    <Company>WriteStudio</Company>
+    <Product>WriteStudio - .NET Teaching &amp; Handwritten Video Recording Studio</Product>
+    <Copyright>Copyright © 2026 WriteStudio</Copyright>
+  </PropertyGroup>
+</Project>

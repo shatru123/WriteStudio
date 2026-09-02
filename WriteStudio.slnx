@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WriteStudio.App/WriteStudio.App.csproj" />
+    <Project Path="src/WriteStudio.Audio/WriteStudio.Audio.csproj" />
+    <Project Path="src/WriteStudio.Camera/WriteStudio.Camera.csproj" />
+    <Project Path="src/WriteStudio.Core/WriteStudio.Core.csproj" />
+    <Project Path="src/WriteStudio.Recording/WriteStudio.Recording.csproj" />
+    <Project Path="src/WriteStudio.Rendering/WriteStudio.Rendering.csproj" />
+    <Project Path="src/WriteStudio.Slides/WriteStudio.Slides.csproj" />
+    <Project Path="src/WriteStudio.Storage/WriteStudio.Storage.csproj" />
+    <Project Path="src/WriteStudio.Whiteboard/WriteStudio.Whiteboard.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WriteStudio.Core.Tests/WriteStudio.Core.Tests.csproj" />
+    <Project Path="tests/WriteStudio.Recording.Tests/WriteStudio.Recording.Tests.csproj" />
+    <Project Path="tests/WriteStudio.Rendering.Tests/WriteStudio.Rendering.Tests.csproj" />
+    <Project Path="tests/WriteStudio.Storage.Tests/WriteStudio.Storage.Tests.csproj" />
+    <Project Path="tests/WriteStudio.Whiteboard.Tests/WriteStudio.Whiteboard.Tests.csproj" />
+  </Folder>
+</Solution>

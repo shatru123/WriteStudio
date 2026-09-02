@@ -1,0 +1,362 @@
+<Window x:Class="WriteStudio.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:WriteStudio.App.ViewModels"
+        xmlns:controls="clr-namespace:WriteStudio.App.Controls"
+        xmlns:converters="clr-namespace:WriteStudio.App.Converters"
+        mc:Ignorable="d"
+        Title="{Binding WindowTitle}" Height="900" Width="1440"
+        Background="#12151B" Foreground="#E2E8F0"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:ColorToBrushConverter x:Key="ColorToBrush"/>
+        <converters:LevelToWidthConverter x:Key="LevelToWidth"/>
+        <converters:RecordingStateToColorConverter x:Key="StateToColor"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- Header / Status Bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Menu Bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Main 3-Pane Studio Area -->
+            <RowDefinition Height="*"/>
+            <!-- Bottom Studio Dock -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Header & Live State Badge -->
+        <Border Grid.Row="0" Background="#0D1117" BorderBrush="#21262D" BorderThickness="0,0,0,1" Padding="16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+                    <Border Background="#2563EB" CornerRadius="6" Width="28" Height="28" Margin="0,0,10,0">
+                        <TextBlock Text="W" FontWeight="Bold" FontSize="16" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="WriteStudio" FontWeight="Bold" FontSize="18" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                    <TextBlock Text="— Professional Teaching Studio" Margin="8,0,0,0" FontSize="13" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Recording Status Pill -->
+                <Border Grid.Column="2" CornerRadius="16" Padding="14,6" Background="#1E293B" BorderBrush="#334155" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="10" Height="10" Fill="{Binding Recording.State, Converter={StaticResource StateToColor}}" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding Recording.StatusText}" FontWeight="SemiBold" FontSize="13" Foreground="#F8FAFC"/>
+                        <TextBlock Text=" | " Foreground="#64748B" Margin="6,0"/>
+                        <TextBlock Text="{Binding Recording.FormattedDuration}" FontFamily="Consolas" FontWeight="Bold" FontSize="14" Foreground="#38BDF8"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Menu Bar -->
+        <Menu Grid.Row="1" Background="#161B22" Foreground="#CBD5E1" FontSize="13" Padding="6,2">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New Project" Command="{Binding NewProjectCommand}"/>
+                <MenuItem Header="_Open Project..." Command="{Binding OpenProjectCommand}"/>
+                <MenuItem Header="_Save Project" Command="{Binding SaveProjectCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Export MP4 Video..." Command="{Binding OpenExportDialogCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Exit" Click="OnMenuExitClick"/>
+            </MenuItem>
+            <MenuItem Header="_Recording">
+                <MenuItem Header="_Record" Command="{Binding Recording.RecordCommand}"/>
+                <MenuItem Header="_Pause" Command="{Binding Recording.PauseCommand}"/>
+                <MenuItem Header="_Resume" Command="{Binding Recording.ResumeCommand}"/>
+                <MenuItem Header="_Stop" Command="{Binding Recording.StopCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Whiteboard Background: White" Command="{Binding Whiteboard.SelectBackgroundCommand}" CommandParameter="White"/>
+                <MenuItem Header="Whiteboard Background: Blackboard" Command="{Binding Whiteboard.SelectBackgroundCommand}" CommandParameter="Blackboard"/>
+                <MenuItem Header="Whiteboard Background: Dark Grid" Command="{Binding Whiteboard.SelectBackgroundCommand}" CommandParameter="DarkGrid"/>
+                <MenuItem Header="Whiteboard Background: Light Grid" Command="{Binding Whiteboard.SelectBackgroundCommand}" CommandParameter="LightGrid"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Crash Recovery..." Command="{Binding CheckRecoveryCommand}"/>
+                <MenuItem Header="_About WriteStudio" Click="OnMenuAboutClick"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Main Studio Area (3 Panes) -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <!-- Left Pane: Presenter Reference Slides (Private) -->
+                <ColumnDefinition Width="320" MinWidth="240" MaxWidth="480"/>
+                <ColumnDefinition Width="4"/>
+                <!-- Center: Whiteboard Canvas -->
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="4"/>
+                <!-- Right Pane: Drawing Tools Palette -->
+                <ColumnDefinition Width="260" MinWidth="220" MaxWidth="340"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT PANE: PRESENTER REFERENCE MATERIAL (PRIVATE) -->
+            <Border Grid.Column="0" Background="#0F172A" BorderBrush="#1E293B" BorderThickness="0,0,1,0" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="PRESENTER REFERENCE" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,2"/>
+                        <TextBlock Text="Private — Excluded from recording" FontSize="11" Foreground="#64748B"/>
+                    </StackPanel>
+
+                    <!-- Import Button -->
+                    <Button Grid.Row="1" Content="📁 Load Slides (PDF / Image)..." Click="OnLoadSlidesClick"
+                            Background="#1E293B" Foreground="#E2E8F0" BorderBrush="#334155" Padding="10,6" Margin="0,0,0,10"
+                            Cursor="Hand"/>
+
+                    <!-- Slide Viewer -->
+                    <Border Grid.Row="2" Background="#020617" CornerRadius="6" BorderBrush="#1E293B" BorderThickness="1" ClipToBounds="True">
+                        <Grid>
+                            <!-- Placeholder when no slides -->
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" 
+                                        Visibility="{Binding Slides.HasDocument, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}">
+                                <TextBlock Text="📑" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                <TextBlock Text="No reference slides loaded" Foreground="#64748B" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Load reference material to assist your teaching privately." 
+                                           Foreground="#475569" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="12,4"/>
+                            </StackPanel>
+
+                            <!-- Slide Content Image -->
+                            <Image Source="{Binding Slides.CurrentSlideImage}" Stretch="Uniform"
+                                   Visibility="{Binding Slides.HasDocument, Converter={StaticResource BoolToVis}}"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Slide Navigation Controls -->
+                    <Border Grid.Row="3" Background="#1E293B" CornerRadius="6" Padding="8" Margin="0,10,0,0"
+                            Visibility="{Binding Slides.HasDocument, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0" Content="◀ Prev" Command="{Binding Slides.PreviousSlideCommand}"
+                                    Background="#334155" Foreground="White" BorderThickness="0" Padding="8,4" Cursor="Hand"/>
+
+                            <TextBlock Grid.Column="1" Text="{Binding Slides.SlideIndicator}" HorizontalAlignment="Center" 
+                                       VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#94A3B8"/>
+
+                            <Button Grid.Column="2" Content="Next ▶" Command="{Binding Slides.NextSlideCommand}"
+                                    Background="#334155" Foreground="White" BorderThickness="0" Padding="8,4" Cursor="Hand"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Splitter 1 -->
+            <GridSplitter Grid.Column="1" Width="4" Background="#1E293B" HorizontalAlignment="Stretch"/>
+
+            <!-- CENTER PANE: WHITEBOARD CANVAS -->
+            <Grid Grid.Column="2" Background="#181D26">
+                <Grid.RowDefinitions>
+                    <!-- Canvas -->
+                    <RowDefinition Height="*"/>
+                    <!-- Page Switcher Bar -->
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Whiteboard Canvas Host -->
+                <Border Grid.Row="0" Margin="12" CornerRadius="8" BorderBrush="#2D3748" BorderThickness="1" ClipToBounds="True">
+                    <controls:WhiteboardCanvas WhiteboardService="{Binding WhiteboardService, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                </Border>
+
+                <!-- Page Navigation Bar -->
+                <Border Grid.Row="1" Background="#0F172A" BorderBrush="#1E293B" BorderThickness="0,1,0,0" Padding="12,8">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="◀" Command="{Binding Whiteboard.PreviousPageCommand}" Background="#1E293B" Foreground="White" Padding="10,4" Margin="0,0,6,0" Cursor="Hand"/>
+                        <TextBlock Text="{Binding Whiteboard.PageIndicator}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#E2E8F0" Margin="12,0"/>
+                        <Button Content="▶" Command="{Binding Whiteboard.NextPageCommand}" Background="#1E293B" Foreground="White" Padding="10,4" Margin="6,0,12,0" Cursor="Hand"/>
+                        
+                        <Button Content="➕ Add Page" Command="{Binding Whiteboard.AddPageCommand}" Background="#2563EB" Foreground="White" Padding="10,4" Margin="0,0,6,0" Cursor="Hand"/>
+                        <Button Content="🗑 Delete Page" Command="{Binding Whiteboard.DeletePageCommand}" Background="#991B1B" Foreground="White" Padding="10,4" Cursor="Hand"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Splitter 2 -->
+            <GridSplitter Grid.Column="3" Width="4" Background="#1E293B" HorizontalAlignment="Stretch"/>
+
+            <!-- RIGHT PANE: TOOL PALETTE -->
+            <Border Grid.Column="4" Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1,0,0,0" Padding="14">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="DRAWING TOOLS" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,10"/>
+
+                        <!-- Primary Tools -->
+                        <UniformGrid Columns="3" Margin="0,0,0,14">
+                            <Button Content="✏ Pen" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Pen" Margin="2" Padding="6" Background="{Binding Whiteboard.IsPenActive, Converter={StaticResource BoolToVis}}" Foreground="White" Cursor="Hand"/>
+                            <Button Content="🖍 Pencil" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Pencil" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="✨ Marker" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Highlighter" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="🧹 Eraser" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Eraser" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="📏 Line" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Line" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="⬛ Rect" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Rectangle" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="⭕ Circle" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Circle" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="➔ Arrow" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Arrow" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                            <Button Content="🔤 Text" Command="{Binding Whiteboard.SelectToolCommand}" CommandParameter="Text" Margin="2" Padding="6" Foreground="White" Cursor="Hand"/>
+                        </UniformGrid>
+
+                        <Separator Background="#1E293B" Margin="0,4,0,12"/>
+
+                        <!-- Color Palette -->
+                        <TextBlock Text="PALETTE" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,8"/>
+                        <ItemsControl ItemsSource="{Binding Whiteboard.PaletteColors}" Margin="0,0,0,12">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Width="26" Height="26" Margin="3" Cursor="Hand"
+                                            Background="{Binding Converter={StaticResource ColorToBrush}}"
+                                            BorderBrush="#475569" BorderThickness="1.5"
+                                            Command="{Binding DataContext.Whiteboard.SelectColorCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Separator Background="#1E293B" Margin="0,4,0,12"/>
+
+                        <!-- Stroke Thickness Slider -->
+                        <TextBlock Text="THICKNESS" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                        <Slider Minimum="1" Maximum="32" Value="{Binding Whiteboard.ActiveThickness}" Margin="0,0,0,12"/>
+
+                        <!-- Background Style Switcher -->
+                        <TextBlock Text="BACKGROUND STYLE" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                        <ComboBox SelectedValue="{Binding Whiteboard.ActiveBackground}" SelectedValuePath="Tag" Background="#1E293B" Foreground="White" Margin="0,0,0,14">
+                            <ComboBoxItem Content="Clean White" Tag="White"/>
+                            <ComboBoxItem Content="Blackboard / Slate" Tag="Blackboard"/>
+                            <ComboBoxItem Content="Dark Graph Grid" Tag="DarkGrid"/>
+                            <ComboBoxItem Content="Light Graph Grid" Tag="LightGrid"/>
+                            <ComboBoxItem Content="Ruled Lined Paper" Tag="Ruled"/>
+                            <ComboBoxItem Content="Dark Ruled Paper" Tag="DarkRuled"/>
+                        </ComboBox>
+
+                        <Separator Background="#1E293B" Margin="0,4,0,12"/>
+
+                        <!-- Undo / Redo / Clear -->
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="↩ Undo" Command="{Binding Whiteboard.UndoCommand}" Margin="0,0,4,0" Padding="8,6" Background="#1E293B" Foreground="White" Cursor="Hand"/>
+                            <Button Grid.Column="1" Content="↪ Redo" Command="{Binding Whiteboard.RedoCommand}" Margin="4,0,0,0" Padding="8,6" Background="#1E293B" Foreground="White" Cursor="Hand"/>
+                        </Grid>
+
+                        <Button Content="🗑 Clear Page Canvas" Command="{Binding Whiteboard.ClearPageCommand}" Margin="0,8,0,0" Padding="8,6" Background="#7F1D1D" Foreground="White" Cursor="Hand"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- BOTTOM STUDIO DOCK -->
+        <Border Grid.Row="3" Background="#0A0E17" BorderBrush="#1E293B" BorderThickness="0,1,0,0" Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <!-- Audio Meters & Device -->
+                    <ColumnDefinition Width="320"/>
+                    <!-- Camera Controls -->
+                    <ColumnDefinition Width="320"/>
+                    <!-- Recording Hub -->
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 1. Audio Metering -->
+                <Border Grid.Column="0" Background="#0F172A" CornerRadius="8" Padding="12,8" Margin="0,0,12,0" BorderBrush="#1E293B" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="MICROPHONE / AUDIO" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding Audio.Devices}" DisplayMemberPath="Name" SelectedItem="{Binding Audio.SelectedDevice}" 
+                                  Background="#1E293B" Foreground="White" Margin="0,0,0,6"/>
+                        
+                        <!-- Peak Level VU Meter Bar -->
+                        <Grid Height="10" Background="#1E293B">
+                            <Border HorizontalAlignment="Left" Width="{Binding Audio.PeakLevel, Converter={StaticResource LevelToWidth}}" Background="#22C55E" CornerRadius="2"/>
+                        </Grid>
+                        <TextBlock Text="{Binding Audio.StatusMessage}" FontSize="10" Foreground="#94A3B8" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 2. Camera Controls -->
+                <Border Grid.Column="1" Background="#0F172A" CornerRadius="8" Padding="12,8" Margin="0,0,12,0" BorderBrush="#1E293B" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="WEBCAM / PRESENTER PiP" FontWeight="Bold" FontSize="11" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding Camera.Devices}" DisplayMemberPath="Name" SelectedItem="{Binding Camera.SelectedDevice}" 
+                                  Background="#1E293B" Foreground="White" Margin="0,0,0,6"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox Grid.Column="0" SelectedValue="{Binding Camera.CurrentLayout.Preset}" Background="#1E293B" Foreground="White" Margin="0,0,4,0">
+                                <ComboBoxItem Content="Bottom-Right" Tag="BottomRight"/>
+                                <ComboBoxItem Content="Bottom-Left" Tag="BottomLeft"/>
+                                <ComboBoxItem Content="Top-Right" Tag="TopRight"/>
+                                <ComboBoxItem Content="Top-Left" Tag="TopLeft"/>
+                                <ComboBoxItem Content="Fullscreen" Tag="Fullscreen"/>
+                                <ComboBoxItem Content="Hidden" Tag="Hidden"/>
+                            </ComboBox>
+                            <CheckBox Grid.Column="1" Content="Mirror Feed" IsChecked="{Binding Camera.IsMirrored}" Foreground="#CBD5E1" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 3. Master Recording Hub & Export Button -->
+                <Border Grid.Column="2" Background="#0F172A" CornerRadius="8" Padding="12,8" BorderBrush="#1E293B" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Studio Action Buttons -->
+                        <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+                            <!-- Big Record Button -->
+                            <Button Content="● RECORD" Command="{Binding Recording.RecordCommand}"
+                                    Visibility="{Binding Recording.IsStopped, Converter={StaticResource BoolToVis}}"
+                                    Background="#DC2626" Foreground="White" FontWeight="Bold" FontSize="14" Padding="18,10" CornerRadius="6" Cursor="Hand" Margin="0,0,10,0"/>
+
+                            <!-- Pause / Resume Buttons -->
+                            <Button Content="❚❚ PAUSE" Command="{Binding Recording.PauseCommand}"
+                                    Visibility="{Binding Recording.IsRecording, Converter={StaticResource BoolToVis}}"
+                                    Background="#D97706" Foreground="White" FontWeight="Bold" FontSize="14" Padding="16,10" CornerRadius="6" Cursor="Hand" Margin="0,0,10,0"/>
+
+                            <Button Content="▶ RESUME" Command="{Binding Recording.ResumeCommand}"
+                                    Visibility="{Binding Recording.IsPaused, Converter={StaticResource BoolToVis}}"
+                                    Background="#2563EB" Foreground="White" FontWeight="Bold" FontSize="14" Padding="16,10" CornerRadius="6" Cursor="Hand" Margin="0,0,10,0"/>
+
+                            <!-- Stop Button -->
+                            <Button Content="◼ STOP" Command="{Binding Recording.StopCommand}"
+                                    Visibility="{Binding Recording.IsStopped, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"
+                                    Background="#475569" Foreground="White" FontWeight="Bold" FontSize="14" Padding="16,10" CornerRadius="6" Cursor="Hand"/>
+                        </StackPanel>
+
+                        <!-- Export Button -->
+                        <Button Grid.Column="1" Content="🎬 Export MP4 Video..." Command="{Binding OpenExportDialogCommand}"
+                                Background="#16A34A" Foreground="White" FontWeight="Bold" FontSize="13" Padding="16,10" CornerRadius="6" Cursor="Hand" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

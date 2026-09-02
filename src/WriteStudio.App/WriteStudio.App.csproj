@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType Condition="$([MSBuild]::IsOSPlatform('Windows'))">WinExe</OutputType>
+    <OutputType Condition="!$([MSBuild]::IsOSPlatform('Windows'))">Exe</OutputType>
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="!$([MSBuild]::IsOSPlatform('Windows'))">net10.0</TargetFramework>
+    <UseWPF Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</UseWPF>
+    <RootNamespace>WriteStudio.App</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0-preview.1.25080.5" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0-preview.1.25080.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WriteStudio.Core\WriteStudio.Core.csproj" />
+    <ProjectReference Include="..\WriteStudio.Whiteboard\WriteStudio.Whiteboard.csproj" />
+    <ProjectReference Include="..\WriteStudio.Audio\WriteStudio.Audio.csproj" />
+    <ProjectReference Include="..\WriteStudio.Camera\WriteStudio.Camera.csproj" />
+    <ProjectReference Include="..\WriteStudio.Slides\WriteStudio.Slides.csproj" />
+    <ProjectReference Include="..\WriteStudio.Recording\WriteStudio.Recording.csproj" />
+    <ProjectReference Include="..\WriteStudio.Rendering\WriteStudio.Rendering.csproj" />
+    <ProjectReference Include="..\WriteStudio.Storage\WriteStudio.Storage.csproj" />
+  </ItemGroup>
+</Project>

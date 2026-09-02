@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>WriteStudio.Storage</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WriteStudio.Core\WriteStudio.Core.csproj" />
+    <ProjectReference Include="..\WriteStudio.Whiteboard\WriteStudio.Whiteboard.csproj" />
+    <ProjectReference Include="..\WriteStudio.Audio\WriteStudio.Audio.csproj" />
+    <ProjectReference Include="..\WriteStudio.Camera\WriteStudio.Camera.csproj" />
+    <ProjectReference Include="..\WriteStudio.Slides\WriteStudio.Slides.csproj" />
+    <ProjectReference Include="..\WriteStudio.Recording\WriteStudio.Recording.csproj" />
+  </ItemGroup>
+</Project>
