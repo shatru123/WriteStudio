@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using WriteStudio.Core.Abstractions;
+using WriteStudio.Core.Models;
 
 namespace WriteStudio.Rendering;
 
@@ -85,6 +86,8 @@ public class FFmpegService : IFFmpegService
         int fps,
         string? audioFilePath,
         string outputFilePath,
+        string? webcamFilePath = null,
+        CameraLayout? cameraLayout = null,
         int videoBitrateKbps = 4000,
         int audioBitrateKbps = 192,
         string videoCodec = "libx264",
@@ -94,26 +97,73 @@ public class FFmpegService : IFFmpegService
     {
         var args = new System.Text.StringBuilder();
 
-        // Raw BGRA video input from pipe:0
+        // Input 0: Raw BGRA whiteboard frames from pipe:0
         args.Append($"-f rawvideo -pix_fmt bgra -s {width}x{height} -r {fps} -i pipe:0 ");
 
-        // Audio input if available
+        bool hasWebcam = !string.IsNullOrWhiteSpace(webcamFilePath) && File.Exists(webcamFilePath) &&
+                         (cameraLayout == null || cameraLayout.IsVisible && cameraLayout.Preset != CameraPositionPreset.Hidden);
+        
         bool hasAudio = !string.IsNullOrWhiteSpace(audioFilePath) && File.Exists(audioFilePath);
+
+        int webcamInputIndex = -1;
+        int audioInputIndex = -1;
+        int currentInputIndex = 1;
+
+        if (hasWebcam)
+        {
+            args.Append($"-i \"{webcamFilePath}\" ");
+            webcamInputIndex = currentInputIndex++;
+        }
+
         if (hasAudio)
         {
             args.Append($"-i \"{audioFilePath}\" ");
+            audioInputIndex = currentInputIndex++;
+        }
+
+        // Filter complex for webcam overlay
+        if (hasWebcam)
+        {
+            int pipWidth = (int)(width * (cameraLayout?.NormalizedWidth > 0 ? cameraLayout.NormalizedWidth : 0.22));
+            int pipHeight = (int)(height * (cameraLayout?.NormalizedHeight > 0 ? cameraLayout.NormalizedHeight : 0.25));
+
+            // Ensure dimensions are even for H.264
+            pipWidth = (pipWidth / 2) * 2;
+            pipHeight = (pipHeight / 2) * 2;
+
+            string overlayPos = cameraLayout?.Preset switch
+            {
+                CameraPositionPreset.BottomLeft => "32:main_h-overlay_h-32",
+                CameraPositionPreset.TopRight => "main_w-overlay_w-32:32",
+                CameraPositionPreset.TopLeft => "32:32",
+                CameraPositionPreset.Fullscreen => "0:0",
+                _ => "main_w-overlay_w-32:main_h-overlay_h-32" // BottomRight default
+            };
+
+            args.Append($"-filter_complex \"[{webcamInputIndex}:v]scale={pipWidth}:{pipHeight}[cam]; [0:v][cam]overlay={overlayPos}[v]\" ");
+            args.Append("-map \"[v]\" ");
+        }
+        else
+        {
+            args.Append("-map 0:v ");
+        }
+
+        // Audio mapping & codec
+        if (hasAudio)
+        {
+            args.Append($"-map {audioInputIndex}:a:0? ");
+            args.Append($"-c:a {audioCodec} -b:a {audioBitrateKbps}k ");
         }
 
         // Video codec & quality settings
         args.Append($"-c:v {videoCodec} -preset {preset} -crf {crf} -pix_fmt yuv420p ");
 
-        // Audio codec & mux settings
-        if (hasAudio)
+        if (hasAudio || hasWebcam)
         {
-            args.Append($"-c:a {audioCodec} -b:a {audioBitrateKbps}k -shortest ");
+            args.Append("-shortest ");
         }
 
-        // Faststart for streaming/web playback
+        // Faststart for web streaming playback
         args.Append($"-movflags +faststart -y \"{outputFilePath}\"");
 
         return args.ToString();

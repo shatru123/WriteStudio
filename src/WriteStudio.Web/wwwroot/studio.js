@@ -35,11 +35,21 @@ class WriteStudioEngine {
         this.slides = [];
         this.currentSlideIndex = -1;
 
-        // Hardware & Media
+        // Hardware & Media Streams
         this.audioContext = null;
         this.analyserNode = null;
         this.audioStream = null;
         this.cameraStream = null;
+        
+        // Media Recorders
+        this.audioRecorder = null;
+        this.audioChunks = [];
+        this.recordedAudioBlob = null;
+
+        this.cameraRecorder = null;
+        this.cameraChunks = [];
+        this.recordedCameraBlob = null;
+
         this.cameraLayout = {
             preset: 'BottomRight',
             isMirrored: true,
@@ -263,7 +273,7 @@ class WriteStudioEngine {
                 const angle = (2 * Math.PI * i) / segments;
                 points.push({
                     x: cx + rx * Math.cos(angle),
-                    y: cy + ry * Math.Sin(angle),
+                    y: cy + ry * Math.sin(angle),
                     pressure: 0.5,
                     timestamp: timestamp
                 });
@@ -671,32 +681,15 @@ class WriteStudioEngine {
     // Hardware Audio & Webcam PiP Controls
     // ==========================================
     bindMediaEvents() {
-        // Audio
+        // Audio Connect
         const btnAudio = document.getElementById('btnEnableAudio');
         const audioStatus = document.getElementById('audioStatus');
-        const vuBar = document.getElementById('vuMeterBar');
 
         btnAudio.addEventListener('click', async () => {
-            try {
-                this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = this.audioContext.createMediaStreamSource(this.audioStream);
-                this.analyserNode = this.audioContext.createAnalyser();
-                this.analyserNode.fftSize = 256;
-                source.connect(this.analyserNode);
-
-                btnAudio.textContent = '✓ Mic Connected';
-                btnAudio.classList.remove('btn-secondary');
-                btnAudio.classList.add('btn-primary');
-                audioStatus.textContent = 'Microphone active — Live VU metering enabled';
-
-                this.startVuMeterLoop();
-            } catch (err) {
-                audioStatus.textContent = `Microphone access error: ${err.message}`;
-            }
+            await this.enableMicrophone();
         });
 
-        // Camera
+        // Camera Toggle
         const btnCamera = document.getElementById('btnToggleCamera');
         const video = document.getElementById('webcamVideo');
         const camPlaceholder = document.getElementById('camPlaceholder');
@@ -711,15 +704,10 @@ class WriteStudioEngine {
                 video.srcObject = null;
                 camPlaceholder.style.display = 'flex';
                 btnCamera.textContent = 'Enable Camera';
+                btnCamera.classList.remove('btn-primary');
+                btnCamera.classList.add('btn-secondary');
             } else {
-                try {
-                    this.cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    video.srcObject = this.cameraStream;
-                    camPlaceholder.style.display = 'none';
-                    btnCamera.textContent = 'Disable Camera';
-                } catch (err) {
-                    alert(`Camera access error: ${err.message}`);
-                }
+                await this.enableCamera();
             }
         });
 
@@ -747,6 +735,53 @@ class WriteStudioEngine {
             this.cameraLayout.isMirrored = e.target.checked;
             cameraPip.classList.toggle('no-mirror', !e.target.checked);
         });
+    }
+
+    async enableMicrophone() {
+        const btnAudio = document.getElementById('btnEnableAudio');
+        const audioStatus = document.getElementById('audioStatus');
+
+        try {
+            this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = this.audioContext.createMediaStreamSource(this.audioStream);
+            this.analyserNode = this.audioContext.createAnalyser();
+            this.analyserNode.fftSize = 256;
+            source.connect(this.analyserNode);
+
+            btnAudio.textContent = '✓ Mic Connected';
+            btnAudio.classList.remove('btn-secondary');
+            btnAudio.classList.add('btn-primary');
+            audioStatus.textContent = 'Microphone active — Live VU metering enabled';
+
+            this.startVuMeterLoop();
+            return true;
+        } catch (err) {
+            audioStatus.textContent = `Microphone error: ${err.message}`;
+            return false;
+        }
+    }
+
+    async enableCamera() {
+        const btnCamera = document.getElementById('btnToggleCamera');
+        const video = document.getElementById('webcamVideo');
+        const camPlaceholder = document.getElementById('camPlaceholder');
+
+        try {
+            this.cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            video.srcObject = this.cameraStream;
+            await video.play();
+            camPlaceholder.style.display = 'none';
+            btnCamera.textContent = '✓ Camera Active';
+            btnCamera.classList.remove('btn-secondary');
+            btnCamera.classList.add('btn-primary');
+            return true;
+        } catch (err) {
+            alert(`Camera access error: ${err.message}`);
+            return false;
+        }
     }
 
     startVuMeterLoop() {
@@ -782,11 +817,44 @@ class WriteStudioEngine {
         btnStop.addEventListener('click', () => this.stopRecording());
     }
 
-    startRecording() {
+    async startRecording() {
+        // Auto-connect mic if not connected
+        if (!this.audioStream) {
+            await this.enableMicrophone();
+        }
+
         this.recordingState = 'Recording';
         this.sessionStartTime = Date.now();
         this.totalPausedDuration = 0;
         this.timelineEvents = [];
+
+        // Start Audio Recording
+        this.audioChunks = [];
+        if (this.audioStream) {
+            try {
+                this.audioRecorder = new MediaRecorder(this.audioStream);
+                this.audioRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) this.audioChunks.push(e.data);
+                };
+                this.audioRecorder.start(250); // collect 250ms chunks
+            } catch (err) {
+                console.warn('Could not start Audio MediaRecorder:', err);
+            }
+        }
+
+        // Start Camera Video Recording
+        this.cameraChunks = [];
+        if (this.cameraStream && this.cameraLayout.preset !== 'Hidden') {
+            try {
+                this.cameraRecorder = new MediaRecorder(this.cameraStream, { mimeType: 'video/webm' });
+                this.cameraRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) this.cameraChunks.push(e.data);
+                };
+                this.cameraRecorder.start(250);
+            } catch (err) {
+                console.warn('Could not start Camera MediaRecorder:', err);
+            }
+        }
 
         this.updateRecordingUi();
         this.startTimer();
@@ -794,8 +862,8 @@ class WriteStudioEngine {
         this.recordTimelineEvent({
             $eventType: 'RecordingStateChanged',
             timestamp: '00:00:00',
-            oldState: 0,
-            newState: 1
+            oldState: 'Stopped',
+            newState: 'Recording'
         });
 
         this.recordTimelineEvent({
@@ -808,13 +876,17 @@ class WriteStudioEngine {
     pauseRecording() {
         this.recordingState = 'Paused';
         this.pauseStartTime = Date.now();
+        
+        if (this.audioRecorder && this.audioRecorder.state === 'recording') this.audioRecorder.pause();
+        if (this.cameraRecorder && this.cameraRecorder.state === 'recording') this.cameraRecorder.pause();
+
         this.updateRecordingUi();
 
         this.recordTimelineEvent({
             $eventType: 'RecordingStateChanged',
             timestamp: this.getElapsedSessionTime(),
-            oldState: 1,
-            newState: 2
+            oldState: 'Recording',
+            newState: 'Paused'
         });
     }
 
@@ -824,13 +896,17 @@ class WriteStudioEngine {
             this.pauseStartTime = null;
         }
         this.recordingState = 'Recording';
+
+        if (this.audioRecorder && this.audioRecorder.state === 'paused') this.audioRecorder.resume();
+        if (this.cameraRecorder && this.cameraRecorder.state === 'paused') this.cameraRecorder.resume();
+
         this.updateRecordingUi();
 
         this.recordTimelineEvent({
             $eventType: 'RecordingStateChanged',
             timestamp: this.getElapsedSessionTime(),
-            oldState: 2,
-            newState: 1
+            oldState: 'Paused',
+            newState: 'Recording'
         });
     }
 
@@ -839,11 +915,27 @@ class WriteStudioEngine {
         this.recordingState = 'Stopped';
         clearInterval(this.timerInterval);
 
+        // Stop Audio Recorder
+        if (this.audioRecorder && this.audioRecorder.state !== 'inactive') {
+            this.audioRecorder.onstop = () => {
+                this.recordedAudioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+            };
+            this.audioRecorder.stop();
+        }
+
+        // Stop Camera Recorder
+        if (this.cameraRecorder && this.cameraRecorder.state !== 'inactive') {
+            this.cameraRecorder.onstop = () => {
+                this.recordedCameraBlob = new Blob(this.cameraChunks, { type: 'video/webm' });
+            };
+            this.cameraRecorder.stop();
+        }
+
         this.recordTimelineEvent({
             $eventType: 'RecordingStateChanged',
             timestamp: finalTime,
-            oldState: 1,
-            newState: 0
+            oldState: 'Recording',
+            newState: 'Stopped'
         });
 
         this.updateRecordingUi();
@@ -851,7 +943,7 @@ class WriteStudioEngine {
     }
 
     getElapsedSessionTime() {
-        if (!this.sessionStartTime) return '00:00:00';
+        if (!this.sessionStartTime) return '00:00:00.000';
         let now = Date.now();
         if (this.recordingState === 'Paused' && this.pauseStartTime) {
             now = this.pauseStartTime;
@@ -932,6 +1024,10 @@ class WriteStudioEngine {
             const progressBar = document.getElementById('exportProgressBar');
             const statusText = document.getElementById('exportStatusText');
 
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '20%';
+            statusText.textContent = 'Packaging session tracks and rasterizing vector strokes...';
+
             let durationStr = this.getElapsedSessionTime();
             if (durationStr === '00:00:00' || durationStr === '00:00:00.000') {
                 durationStr = '00:00:05.000';
@@ -946,7 +1042,9 @@ class WriteStudioEngine {
                     canvasHeight: 1080,
                     targetFps: 30,
                     duration: durationStr,
-                    totalPages: this.pages.length
+                    totalPages: this.pages.length,
+                    hasAudioTrack: !!this.recordedAudioBlob,
+                    hasWebcamTrack: !!this.recordedCameraBlob
                 },
                 pages: this.pages.map(page => ({
                     id: this.generateGuid(),
@@ -984,14 +1082,24 @@ class WriteStudioEngine {
                 })
             };
 
+            const formData = new FormData();
+            formData.append('session', JSON.stringify(payload));
+
+            if (this.recordedAudioBlob) {
+                formData.append('audioFile', this.recordedAudioBlob, 'recording.webm');
+            }
+
+            if (this.recordedCameraBlob) {
+                formData.append('cameraFile', this.recordedCameraBlob, 'webcam.webm');
+            }
+
             try {
                 progressBar.style.width = '60%';
-                statusText.textContent = 'FFmpeg encoding (1080p @ 30 FPS)...';
+                statusText.textContent = 'FFmpeg compositing video & audio tracks (1080p @ 30 FPS)...';
 
                 const response = await fetch('/api/export', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: formData
                 });
 
                 if (!response.ok) {

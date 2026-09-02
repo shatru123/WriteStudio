@@ -1,3 +1,5 @@
+using WriteStudio.Core.Models;
+
 namespace WriteStudio.Core.Abstractions;
 
 public interface IFFmpegService
@@ -12,6 +14,8 @@ public interface IFFmpegService
         int fps, 
         string? audioFilePath, 
         string outputFilePath, 
+        string? webcamFilePath = null,
+        CameraLayout? cameraLayout = null,
         int videoBitrateKbps = 4000, 
         int audioBitrateKbps = 192,
         string videoCodec = "libx264",

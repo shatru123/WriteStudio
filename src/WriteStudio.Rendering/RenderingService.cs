@@ -58,11 +58,11 @@ public class RenderingService : IRenderingService
                 }
             }
 
-            string? audioPath = Path.Combine(projectDirectory, "audio", "recording.wav");
-            if (!File.Exists(audioPath))
-            {
-                audioPath = null;
-            }
+            // Find audio file if recorded
+            string? audioPath = FindAudioFile(projectDirectory);
+
+            // Find webcam file if recorded
+            string? webcamPath = FindWebcamFile(projectDirectory);
 
             string? outputDir = Path.GetDirectoryName(settings.OutputFilePath);
             if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
@@ -70,18 +70,24 @@ public class RenderingService : IRenderingService
                 Directory.CreateDirectory(outputDir);
             }
 
+            var reconstructor = new TimelineWhiteboardReconstructor(session);
+            var initialRenderState = reconstructor.ReconstructAt(TimeSpan.Zero);
+            var cameraLayout = initialRenderState.CameraLayout;
+
             string ffmpegArgs = _ffmpegService.BuildEncodingArguments(
-                settings.Width,
-                settings.Height,
-                settings.FrameRate,
-                audioPath,
-                settings.OutputFilePath,
-                settings.VideoBitrateKbps,
-                settings.AudioBitrateKbps,
-                settings.VideoCodec,
-                settings.AudioCodec,
-                settings.Preset,
-                settings.Crf
+                width: settings.Width,
+                height: settings.Height,
+                fps: settings.FrameRate,
+                audioFilePath: audioPath,
+                outputFilePath: settings.OutputFilePath,
+                webcamFilePath: settings.IncludeWebcam ? webcamPath : null,
+                cameraLayout: cameraLayout,
+                videoBitrateKbps: settings.VideoBitrateKbps,
+                audioBitrateKbps: settings.AudioBitrateKbps,
+                videoCodec: settings.VideoCodec,
+                audioCodec: settings.AudioCodec,
+                preset: settings.Preset,
+                crf: settings.Crf
             );
 
             _logger?.LogInformation("Starting FFmpeg with arguments: {Args}", ffmpegArgs);
@@ -99,19 +105,20 @@ public class RenderingService : IRenderingService
             using var process = Process.Start(psi) 
                 ?? throw new InvalidOperationException("Failed to start FFmpeg process.");
 
-            var reconstructor = new TimelineWhiteboardReconstructor(session);
             using var frameRenderer = new SkiaFrameRenderer(settings.Width, settings.Height);
 
             double totalSeconds = session.Metadata.Duration.TotalSeconds;
             if (totalSeconds < 0.1)
             {
-                totalSeconds = 1.0; // Minimum 1 second duration
+                totalSeconds = 1.0;
             }
 
             int totalFrames = (int)Math.Ceiling(totalSeconds * settings.FrameRate);
             var stopwatch = Stopwatch.StartNew();
 
             using var stdin = process.StandardInput.BaseStream;
+
+            bool hasLiveWebcamFile = !string.IsNullOrEmpty(webcamPath) && File.Exists(webcamPath);
 
             for (int frameIdx = 0; frameIdx < totalFrames; frameIdx++)
             {
@@ -121,6 +128,14 @@ public class RenderingService : IRenderingService
                 var currentTimestamp = TimeSpan.FromSeconds(currentTimeSec);
 
                 var renderState = reconstructor.ReconstructAt(currentTimestamp);
+
+                // If real webcam video file is being composited by FFmpeg filter complex,
+                // suppress the static placeholder from the whiteboard bitmap frame
+                if (hasLiveWebcamFile)
+                {
+                    renderState = renderState with { CameraLayout = CameraLayout.HiddenLayout };
+                }
+
                 byte[] rawFrameBytes = frameRenderer.RenderFrame(
                     renderState,
                     session.Metadata.CanvasWidth,
@@ -184,6 +199,32 @@ public class RenderingService : IRenderingService
                 _renderCts = null;
             }
         }
+    }
+
+    private static string? FindAudioFile(string projectDirectory)
+    {
+        string[] candidates = {
+            Path.Combine(projectDirectory, "audio", "recording.wav"),
+            Path.Combine(projectDirectory, "audio", "recording.webm"),
+            Path.Combine(projectDirectory, "audio", "recording.mp3"),
+            Path.Combine(projectDirectory, "audio", "recording.m4a"),
+            Path.Combine(projectDirectory, "audio", "recording.ogg"),
+            Path.Combine(projectDirectory, "audio", "recording.aac")
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? FindWebcamFile(string projectDirectory)
+    {
+        string[] candidates = {
+            Path.Combine(projectDirectory, "video", "webcam.mp4"),
+            Path.Combine(projectDirectory, "video", "webcam.webm"),
+            Path.Combine(projectDirectory, "video", "webcam.mov"),
+            Path.Combine(projectDirectory, "video", "webcam.mkv")
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     public Task CancelRenderingAsync()
