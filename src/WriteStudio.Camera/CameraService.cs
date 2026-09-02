@@ -101,12 +101,16 @@ public class CameraService : ICameraService
 
     public void SetMirror(bool isMirrored)
     {
-        CurrentLayout = CurrentLayout with { IsMirrored = isMirrored };
+        var layout = CurrentLayout.Clone();
+        layout.IsMirrored = isMirrored;
+        CurrentLayout = layout;
     }
 
     public void SetVisibility(bool isVisible)
     {
-        CurrentLayout = CurrentLayout with { IsVisible = isVisible };
+        var layout = CurrentLayout.Clone();
+        layout.IsVisible = isVisible;
+        CurrentLayout = layout;
     }
 
     public Task StartCaptureAsync(string? outputVideoTrackPath = null, CancellationToken cancellationToken = default)

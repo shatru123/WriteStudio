@@ -82,7 +82,7 @@ public class RecordingService : IRecordingService
                 {
                     Timestamp = _clock.ElapsedTime,
                     StrokeId = stroke.Id,
-                    Point = lastPoint with { }
+                    Point = lastPoint.Clone()
                 });
             }
         };
@@ -160,7 +160,7 @@ public class RecordingService : IRecordingService
                 RecordEvent(new CameraLayoutChangedTimelineEvent
                 {
                     Timestamp = _clock.ElapsedTime,
-                    Layout = layout with { }
+                    Layout = layout.Clone()
                 });
             }
         };
@@ -224,7 +224,7 @@ public class RecordingService : IRecordingService
             RecordEvent(new CameraLayoutChangedTimelineEvent
             {
                 Timestamp = TimeSpan.Zero,
-                Layout = _cameraService.CurrentLayout with { }
+                Layout = _cameraService.CurrentLayout.Clone()
             });
 
             _logger?.LogInformation("Recording session started in {Directory}", projectDirectory);

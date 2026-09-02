@@ -74,7 +74,7 @@ public class TimelineWhiteboardReconstructor
                     {
                         if (spa.Point.Timestamp <= time)
                         {
-                            inFlight.Points.Add(spa.Point with { });
+                            inFlight.Points.Add(spa.Point.Clone());
                         }
                     }
                     break;
@@ -95,7 +95,7 @@ public class TimelineWhiteboardReconstructor
                     break;
 
                 case CameraLayoutChangedTimelineEvent cl:
-                    cameraLayout = cl.Layout with { };
+                    cameraLayout = cl.Layout.Clone();
                     break;
             }
         }

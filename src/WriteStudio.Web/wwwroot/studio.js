@@ -932,9 +932,10 @@ class WriteStudioEngine {
             const progressBar = document.getElementById('exportProgressBar');
             const statusText = document.getElementById('exportStatusText');
 
-            progressContainer.style.display = 'block';
-            progressBar.style.width = '30%';
-            statusText.textContent = 'Packaging timeline and rasterizing vector strokes...';
+            let durationStr = this.getElapsedSessionTime();
+            if (durationStr === '00:00:00' || durationStr === '00:00:00.000') {
+                durationStr = '00:00:05.000';
+            }
 
             const payload = {
                 sessionId: this.generateGuid(),
@@ -944,11 +945,43 @@ class WriteStudioEngine {
                     canvasWidth: 1920,
                     canvasHeight: 1080,
                     targetFps: 30,
-                    duration: this.getElapsedSessionTime(),
+                    duration: durationStr,
                     totalPages: this.pages.length
                 },
-                pages: this.pages,
-                events: this.timelineEvents
+                pages: this.pages.map(page => ({
+                    id: this.generateGuid(),
+                    index: page.index,
+                    title: page.title,
+                    background: page.background || 'Blackboard',
+                    strokes: (page.strokes || []).map(stroke => ({
+                        id: stroke.id || this.generateGuid(),
+                        pageIndex: stroke.pageIndex || 0,
+                        startTime: stroke.startTime || '00:00:00.000',
+                        endTime: stroke.endTime || '00:00:01.000',
+                        color: stroke.color || { R: 255, G: 255, B: 255, A: 255 },
+                        thickness: stroke.thickness || 4,
+                        opacity: stroke.opacity || 1.0,
+                        toolType: stroke.toolType || 'Pen',
+                        textContent: stroke.textContent || null,
+                        fontSize: stroke.fontSize || 24,
+                        points: (stroke.points || []).map(pt => ({
+                            x: pt.x,
+                            y: pt.y,
+                            pressure: pt.pressure || 0.5,
+                            timestamp: pt.timestamp || '00:00:00.000'
+                        }))
+                    }))
+                })),
+                events: (this.timelineEvents || []).map(evt => {
+                    const clone = { ...evt };
+                    if (clone.oldState === 0) clone.oldState = 'Stopped';
+                    if (clone.oldState === 1) clone.oldState = 'Recording';
+                    if (clone.oldState === 2) clone.oldState = 'Paused';
+                    if (clone.newState === 0) clone.newState = 'Stopped';
+                    if (clone.newState === 1) clone.newState = 'Recording';
+                    if (clone.newState === 2) clone.newState = 'Paused';
+                    return clone;
+                })
             };
 
             try {
@@ -961,7 +994,10 @@ class WriteStudioEngine {
                     body: JSON.stringify(payload)
                 });
 
-                if (!response.ok) throw new Error(await response.text());
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || `HTTP ${response.status}`);
+                }
 
                 progressBar.style.width = '100%';
                 statusText.textContent = 'Download started!';

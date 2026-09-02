@@ -43,7 +43,7 @@ public class DrawingStroke
             Thickness = Thickness,
             Opacity = Opacity,
             ToolType = ToolType,
-            Points = Points.Select(p => p with { }).ToList(),
+            Points = Points.Select(p => p.Clone()).ToList(),
             TextContent = TextContent,
             FontSize = FontSize,
             FontFamily = FontFamily

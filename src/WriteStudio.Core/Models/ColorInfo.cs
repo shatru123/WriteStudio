@@ -3,8 +3,23 @@ namespace WriteStudio.Core.Models;
 /// <summary>
 /// Represents RGBA color information for vector strokes and canvas backgrounds.
 /// </summary>
-public record ColorInfo(byte R, byte G, byte B, byte A = 255)
+public class ColorInfo
 {
+    public byte R { get; set; } = 0;
+    public byte G { get; set; } = 0;
+    public byte B { get; set; } = 0;
+    public byte A { get; set; } = 255;
+
+    public ColorInfo() { }
+
+    public ColorInfo(byte r, byte g, byte b, byte a = 255)
+    {
+        R = r;
+        G = g;
+        B = b;
+        A = a;
+    }
+
     public static ColorInfo Black => new(0, 0, 0, 255);
     public static ColorInfo White => new(255, 255, 255, 255);
     public static ColorInfo Red => new(235, 52, 52, 255);
