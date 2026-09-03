@@ -1096,12 +1096,55 @@ body {
     }
 
     .studio-main {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
         position: relative;
+        overflow: hidden;
     }
 
-    /* Left Drawer: Presenter Reference */
-    .sidebar-left {
+    /* Split Screen Mode on Mobile (Reference Material + Whiteboard Active Simultaneously) */
+    .studio-main.mobile-split-active .sidebar-left {
+        position: relative;
+        top: auto;
+        left: auto;
+        bottom: auto;
+        width: 100% !important;
+        height: var(--mobile-ref-height, 34vh);
+        min-height: 110px;
+        max-height: 65vh;
+        z-index: 10;
+        transform: none !important;
+        box-shadow: none;
+        border-right: none;
+        border-bottom: 1px solid #1E293B;
+        padding: 6px 10px;
+        flex-shrink: 0;
+        display: flex;
+    }
+
+    .studio-main.mobile-split-active .resizer-left {
+        display: flex;
+        width: 100% !important;
+        height: 12px;
+        cursor: row-resize;
+        background: #0B0E14;
+        border-top: 1px solid #1E293B;
+        border-bottom: 1px solid #1E293B;
+        flex-shrink: 0;
+        z-index: 15;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .studio-main.mobile-split-active .resizer-left::after {
+        width: 44px;
+        height: 3px;
+        background: #38BDF8;
+        border-radius: 2px;
+    }
+
+    /* Full Canvas Mode on Mobile (When Split is Disabled) */
+    .studio-main:not(.mobile-split-active) .sidebar-left {
         position: fixed;
         top: 48px;
         left: 0;
@@ -1115,11 +1158,15 @@ body {
         border-right: 1px solid #1E293B;
     }
 
-    .sidebar-left.sidebar-drawer-open {
+    .studio-main:not(.mobile-split-active) .sidebar-left.sidebar-drawer-open {
         transform: translateX(0);
     }
 
-    /* Right Drawer: Drawing Tools */
+    .studio-main:not(.mobile-split-active) .resizer-left {
+        display: none;
+    }
+
+    /* Right Drawer: Advanced Drawing Tools */
     .sidebar-right {
         position: fixed;
         top: 48px;
@@ -1139,22 +1186,30 @@ body {
         transform: translateX(0);
     }
 
-    .studio-dock {
-        height: auto;
-        min-height: 80px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        padding: 8px 12px;
-    }
+    /* Landscape Mode on Mobile/Tablet */
+    @media (orientation: landscape) and (max-width: 992px) {
+        .studio-main.mobile-split-active {
+            flex-direction: row;
+        }
 
-    .dock-panel {
-        flex: 1 1 240px;
-    }
+        .studio-main.mobile-split-active .sidebar-left {
+            width: var(--mobile-ref-width, 38vw) !important;
+            height: 100% !important;
+            max-height: 100%;
+            border-right: 2px solid #1E293B;
+            border-bottom: none;
+        }
 
-    .dock-recording {
-        flex: 1 1 100%;
-        justify-content: space-between;
+        .studio-main.mobile-split-active .resizer-left {
+            width: 12px !important;
+            height: 100% !important;
+            cursor: col-resize;
+        }
+
+        .studio-main.mobile-split-active .resizer-left::after {
+            width: 3px;
+            height: 44px;
+        }
     }
 }
 

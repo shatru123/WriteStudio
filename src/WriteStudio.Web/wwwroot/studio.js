@@ -1070,16 +1070,17 @@ class WriteStudioEngine {
     }
 
     // ==========================================
-    // 📱 Mobile Drawer Events (Responsive UI)
+    // 📱 Mobile Drawer & Split View Events
     // ==========================================
     bindMobileDrawerEvents() {
-        const btnToggleRef = document.getElementById('btnToggleRefSidebar');
+        const btnSplit = document.getElementById('btnMobileSplitView');
         const btnToggleTool = document.getElementById('btnToggleToolSidebar');
         const btnCloseRef = document.getElementById('btnCloseRefSidebar');
         const btnCloseTool = document.getElementById('btnCloseToolSidebar');
         const sidebarLeft = document.getElementById('sidebarLeft');
         const sidebarRight = document.getElementById('sidebarRight');
         const backdrop = document.getElementById('sidebarBackdrop');
+        const studioMain = document.querySelector('.studio-main');
 
         const closeAllDrawers = () => {
             if (sidebarLeft) sidebarLeft.classList.remove('sidebar-drawer-open');
@@ -1087,14 +1088,20 @@ class WriteStudioEngine {
             if (backdrop) backdrop.style.display = 'none';
         };
 
-        if (btnToggleRef && sidebarLeft) {
-            btnToggleRef.addEventListener('click', () => {
-                const isOpen = sidebarLeft.classList.contains('sidebar-drawer-open');
-                closeAllDrawers();
-                if (!isOpen) {
-                    sidebarLeft.classList.add('sidebar-drawer-open');
-                    if (backdrop) backdrop.style.display = 'block';
+        if (btnSplit && studioMain) {
+            btnSplit.addEventListener('click', () => {
+                const isSplit = studioMain.classList.toggle('mobile-split-active');
+                if (isSplit) {
+                    btnSplit.textContent = '📑 Split (ON)';
+                    btnSplit.classList.remove('btn-secondary');
+                    btnSplit.classList.add('btn-primary');
+                } else {
+                    btnSplit.textContent = '📑 Split Notes';
+                    btnSplit.classList.remove('btn-primary');
+                    btnSplit.classList.add('btn-secondary');
                 }
+                closeAllDrawers();
+                setTimeout(() => this.setupCanvasSize(), 50);
             });
         }
 
@@ -1109,13 +1116,25 @@ class WriteStudioEngine {
             });
         }
 
-        if (btnCloseRef) btnCloseRef.addEventListener('click', closeAllDrawers);
+        if (btnCloseRef) {
+            btnCloseRef.addEventListener('click', () => {
+                if (studioMain) studioMain.classList.remove('mobile-split-active');
+                if (btnSplit) {
+                    btnSplit.textContent = '📑 Split Notes';
+                    btnSplit.classList.remove('btn-primary');
+                    btnSplit.classList.add('btn-secondary');
+                }
+                closeAllDrawers();
+                setTimeout(() => this.setupCanvasSize(), 50);
+            });
+        }
+
         if (btnCloseTool) btnCloseTool.addEventListener('click', closeAllDrawers);
         if (backdrop) backdrop.addEventListener('click', closeAllDrawers);
     }
 
     // ==========================================
-    // ↔ Draggable Splitter Resizer
+    // ↔ Draggable Splitter Resizer (Desktop & Mobile)
     // ==========================================
     bindResizerEvents() {
         const resizer = document.getElementById('resizerLeft');
@@ -1128,23 +1147,35 @@ class WriteStudioEngine {
         const onPointerDown = (e) => {
             isResizing = true;
             resizer.classList.add('resizing');
-            document.body.style.cursor = 'col-resize';
+            document.body.style.cursor = window.innerWidth <= 992 && window.innerHeight > window.innerWidth ? 'row-resize' : 'col-resize';
             document.body.style.userSelect = 'none';
             resizer.setPointerCapture(e.pointerId);
         };
 
         const onPointerMove = (e) => {
             if (!isResizing) return;
+            const isMobilePortrait = window.innerWidth <= 992 && window.innerHeight > window.innerWidth;
             const containerRect = studioMain.getBoundingClientRect();
-            let newWidth = e.clientX - containerRect.left;
-            
-            // Constrain between min 220px and max (containerWidth - 320px)
-            const minWidth = 220;
-            const maxWidth = Math.max(300, containerRect.width - 320);
-            newWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
 
-            sidebar.style.width = `${newWidth}px`;
-            document.documentElement.style.setProperty('--sidebar-left-width', `${newWidth}px`);
+            if (isMobilePortrait) {
+                // Vertical touch resizing on portrait mobile
+                let newHeight = e.clientY - containerRect.top;
+                const minH = 110;
+                const maxH = containerRect.height - 180;
+                newHeight = Math.max(minH, Math.min(newHeight, maxH));
+                sidebar.style.height = `${newHeight}px`;
+                document.documentElement.style.setProperty('--mobile-ref-height', `${newHeight}px`);
+            } else {
+                // Horizontal resizing on desktop and landscape mobile
+                let newWidth = e.clientX - containerRect.left;
+                const minWidth = 180;
+                const maxWidth = Math.max(260, containerRect.width - 260);
+                newWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
+                sidebar.style.width = `${newWidth}px`;
+                document.documentElement.style.setProperty('--sidebar-left-width', `${newWidth}px`);
+                document.documentElement.style.setProperty('--mobile-ref-width', `${newWidth}px`);
+            }
+
             this.setupCanvasSize();
         };
 
@@ -1164,18 +1195,22 @@ class WriteStudioEngine {
         resizer.addEventListener('pointerup', onPointerUp);
         resizer.addEventListener('pointercancel', onPointerUp);
 
-        // Double-click to toggle 50% split / default 360px
+        // Double-click to toggle 50% split / default size
         resizer.addEventListener('dblclick', () => {
-            const currentW = sidebar.getBoundingClientRect().width;
-            const containerW = studioMain.getBoundingClientRect().width;
-            let targetW = 360;
-            if (currentW < containerW * 0.45) {
-                targetW = Math.round(containerW * 0.5); // expand to 50% split
+            const isMobilePortrait = window.innerWidth <= 992 && window.innerHeight > window.innerWidth;
+            const containerRect = studioMain.getBoundingClientRect();
+
+            if (isMobilePortrait) {
+                const currentH = sidebar.getBoundingClientRect().height;
+                let targetH = currentH < containerRect.height * 0.45 ? Math.round(containerRect.height * 0.5) : 180;
+                sidebar.style.height = `${targetH}px`;
+                document.documentElement.style.setProperty('--mobile-ref-height', `${targetH}px`);
             } else {
-                targetW = 360; // collapse to default
+                const currentW = sidebar.getBoundingClientRect().width;
+                let targetW = currentW < containerRect.width * 0.45 ? Math.round(containerRect.width * 0.5) : 340;
+                sidebar.style.width = `${targetW}px`;
+                document.documentElement.style.setProperty('--sidebar-left-width', `${targetW}px`);
             }
-            sidebar.style.width = `${targetW}px`;
-            document.documentElement.style.setProperty('--sidebar-left-width', `${targetW}px`);
             this.setupCanvasSize();
         });
     }

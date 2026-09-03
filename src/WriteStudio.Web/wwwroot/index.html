@@ -17,8 +17,8 @@
 
         <div class="header-right">
             <!-- Mobile Toggle Buttons -->
-            <button id="btnToggleRefSidebar" class="btn btn-sm btn-secondary mobile-only-btn" title="Toggle Reference Notes">📑 Notes</button>
-            <button id="btnToggleToolSidebar" class="btn btn-sm btn-secondary mobile-only-btn" title="Toggle Drawing Tools">🎨 Tools</button>
+            <button id="btnMobileSplitView" class="btn btn-sm btn-primary mobile-only-btn" title="Toggle Split View with Reference Material">📑 Split Notes</button>
+            <button id="btnToggleToolSidebar" class="btn btn-sm btn-secondary mobile-only-btn" title="Toggle Advanced Drawing Tools">🎨 Tools</button>
 
             <button id="btnOpenLibrary" class="btn btn-sm btn-secondary btn-library" title="Open saved recordings stored in browser local storage">
                 📚 <span class="hide-mobile">My</span> Recordings <span id="libraryBadge" class="library-badge">0</span>
@@ -46,7 +46,7 @@
     <div id="sidebarBackdrop" class="sidebar-backdrop" style="display:none"></div>
 
     <!-- Main 3-Pane Studio Container -->
-    <main class="studio-main">
+    <main class="studio-main mobile-split-active">
         <!-- LEFT PANE: Private Presenter Reference Material -->
         <aside class="sidebar-left" id="sidebarLeft">
             <div class="pane-title">
