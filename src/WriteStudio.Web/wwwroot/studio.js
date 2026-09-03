@@ -762,14 +762,20 @@ class WriteStudioEngine {
         });
 
         // Undo / Redo / Clear
-        document.getElementById('btnUndo').addEventListener('click', () => this.undo());
-        document.getElementById('btnRedo').addEventListener('click', () => this.redo());
-        document.getElementById('btnClearCanvas').addEventListener('click', () => {
+        const clearCanvasHandler = () => {
             if (this.currentPage.strokes.length === 0) return;
             this.undoStack.push({ type: 'clearPage', strokes: [...this.currentPage.strokes], pageIndex: this.currentPageIndex });
             this.currentPage.strokes = [];
             this.renderCanvas();
-        });
+        };
+
+        const btnClearCanvas = document.getElementById('btnClearCanvas');
+        const btnMobileClearCanvas = document.getElementById('btnMobileClearCanvas');
+
+        if (btnClearCanvas) btnClearCanvas.addEventListener('click', clearCanvasHandler);
+        if (btnMobileClearCanvas) btnMobileClearCanvas.addEventListener('click', clearCanvasHandler);
+        if (btnUndo) btnUndo.addEventListener('click', () => this.undo());
+        if (btnRedo) btnRedo.addEventListener('click', () => this.redo());
 
         window.addEventListener('keydown', (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
