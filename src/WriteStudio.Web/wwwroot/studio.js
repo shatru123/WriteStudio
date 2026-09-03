@@ -176,6 +176,7 @@ class WriteStudioEngine {
         this.bindRecordingEvents();
         this.bindExportEvents();
         this.bindLibraryEvents();
+        this.bindMobileDrawerEvents();
 
         this.renderCanvas();
         this.updateLibraryBadge();
@@ -811,31 +812,40 @@ class WriteStudioEngine {
     }
 
     // ==========================================
-    // Presenter Reference Slides (Private)
+    // Presenter Reference Materials (Multi-File & Any Type)
     // ==========================================
     bindSlideEvents() {
         const fileInput = document.getElementById('slideFileInput');
         const btnLoad = document.getElementById('btnLoadSlides');
-        const img = document.getElementById('currentSlideImg');
-        const placeholder = document.getElementById('slidePlaceholder');
-        const navBar = document.getElementById('slideNavBar');
-        const counter = document.getElementById('slideCounter');
+        const btnClearAll = document.getElementById('btnClearAllSlides');
+        const btnRemoveCurrent = document.getElementById('btnRemoveCurrentSlide');
+        const sidebarLeft = document.getElementById('sidebarLeft');
+        const viewport = document.getElementById('slideViewport');
 
         btnLoad.addEventListener('click', () => fileInput.click());
 
-        fileInput.addEventListener('change', (e) => {
+        fileInput.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
             if (files.length === 0) return;
-
-            this.slides = [];
-            files.forEach((file, index) => {
-                const url = URL.createObjectURL(file);
-                this.slides.push({ name: file.name, url: url, pageNumber: index + 1 });
-            });
-
-            this.currentSlideIndex = 0;
-            this.updateSlideView();
+            await this.addReferenceFiles(files);
+            fileInput.value = ''; // Reset input to allow re-uploading same file name if needed
         });
+
+        if (btnClearAll) {
+            btnClearAll.addEventListener('click', () => {
+                if (confirm('Remove all reference materials?')) {
+                    this.clearAllSlides();
+                }
+            });
+        }
+
+        if (btnRemoveCurrent) {
+            btnRemoveCurrent.addEventListener('click', () => {
+                if (this.currentSlideIndex >= 0 && this.slides.length > 0) {
+                    this.removeSlide(this.currentSlideIndex);
+                }
+            });
+        }
 
         document.getElementById('btnPrevSlide').addEventListener('click', () => {
             if (this.currentSlideIndex > 0) {
@@ -850,25 +860,228 @@ class WriteStudioEngine {
                 this.updateSlideView();
             }
         });
+
+        // Drag & Drop Reference Material Upload
+        const handleDragOver = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            viewport.classList.add('drag-over');
+        };
+
+        const handleDragLeave = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            viewport.classList.remove('drag-over');
+        };
+
+        const handleDrop = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            viewport.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                await this.addReferenceFiles(Array.from(e.dataTransfer.files));
+            }
+        };
+
+        viewport.addEventListener('dragover', handleDragOver);
+        viewport.addEventListener('dragleave', handleDragLeave);
+        viewport.addEventListener('drop', handleDrop);
+    }
+
+    async addReferenceFiles(files) {
+        for (const file of files) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            let fileType = 'other';
+            let contentUrl = null;
+            let textContent = null;
+
+            if (file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext)) {
+                fileType = 'image';
+                contentUrl = URL.createObjectURL(file);
+            } else if (file.type === 'application/pdf' || ext === 'pdf') {
+                fileType = 'pdf';
+                contentUrl = URL.createObjectURL(file);
+            } else if (file.type.startsWith('text/') || ['txt', 'md', 'cs', 'js', 'ts', 'py', 'json', 'html', 'css', 'cpp', 'c', 'h', 'java', 'sql', 'sh', 'xml', 'yaml', 'yml', 'rs', 'go'].includes(ext)) {
+                fileType = 'text';
+                textContent = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => resolve('Error reading file content');
+                    reader.readAsText(file);
+                });
+            } else {
+                fileType = 'other';
+                contentUrl = URL.createObjectURL(file);
+            }
+
+            this.slides.push({
+                id: this.generateGuid(),
+                name: file.name,
+                type: fileType,
+                url: contentUrl,
+                textContent: textContent,
+                sizeBytes: file.size
+            });
+        }
+
+        if (this.currentSlideIndex < 0 || this.currentSlideIndex >= this.slides.length) {
+            this.currentSlideIndex = this.slides.length - 1;
+        }
+
+        this.updateSlideView();
+    }
+
+    removeSlide(index) {
+        if (index >= 0 && index < this.slides.length) {
+            const item = this.slides[index];
+            if (item.url) URL.revokeObjectURL(item.url);
+            this.slides.splice(index, 1);
+            if (this.currentSlideIndex >= this.slides.length) {
+                this.currentSlideIndex = this.slides.length - 1;
+            }
+            this.updateSlideView();
+        }
+    }
+
+    clearAllSlides() {
+        this.slides.forEach(s => {
+            if (s.url) URL.revokeObjectURL(s.url);
+        });
+        this.slides = [];
+        this.currentSlideIndex = -1;
+        this.updateSlideView();
+    }
+
+    renderSlideTabs() {
+        const tabsBar = document.getElementById('slideTabsBar');
+        if (!tabsBar) return;
+
+        if (this.slides.length <= 1) {
+            tabsBar.style.display = 'none';
+            tabsBar.innerHTML = '';
+            return;
+        }
+
+        tabsBar.style.display = 'flex';
+        tabsBar.innerHTML = '';
+
+        this.slides.forEach((item, idx) => {
+            const pill = document.createElement('div');
+            pill.className = `slide-tab-pill ${idx === this.currentSlideIndex ? 'active' : ''}`;
+            
+            const icon = item.type === 'image' ? '🖼' : (item.type === 'pdf' ? '📄' : (item.type === 'text' ? '📝' : '📁'));
+            pill.innerHTML = `
+                <span>${icon} ${item.name}</span>
+                <span class="slide-tab-remove" title="Remove file">&times;</span>
+            `;
+
+            pill.addEventListener('click', (e) => {
+                if (e.target.classList.contains('slide-tab-remove')) {
+                    e.stopPropagation();
+                    this.removeSlide(idx);
+                } else {
+                    this.currentSlideIndex = idx;
+                    this.updateSlideView();
+                }
+            });
+
+            tabsBar.appendChild(pill);
+        });
     }
 
     updateSlideView() {
         const img = document.getElementById('currentSlideImg');
+        const pdfFrame = document.getElementById('currentSlidePdf');
+        const textPre = document.getElementById('currentSlideText');
         const placeholder = document.getElementById('slidePlaceholder');
         const navBar = document.getElementById('slideNavBar');
         const counter = document.getElementById('slideCounter');
+        const fileName = document.getElementById('slideFileName');
+        const btnClear = document.getElementById('btnClearAllSlides');
+
+        this.renderSlideTabs();
 
         if (this.slides.length > 0 && this.currentSlideIndex >= 0) {
-            img.src = this.slides[this.currentSlideIndex].url;
-            img.style.display = 'block';
+            const item = this.slides[this.currentSlideIndex];
+
             placeholder.style.display = 'none';
             navBar.style.display = 'flex';
+            if (btnClear) btnClear.style.display = 'inline-flex';
+
             counter.textContent = `${this.currentSlideIndex + 1} / ${this.slides.length}`;
+            if (fileName) fileName.textContent = item.name;
+
+            // Reset all view elements
+            img.style.display = 'none';
+            pdfFrame.style.display = 'none';
+            textPre.style.display = 'none';
+
+            if (item.type === 'image') {
+                img.src = item.url;
+                img.style.display = 'block';
+            } else if (item.type === 'pdf') {
+                pdfFrame.src = item.url;
+                pdfFrame.style.display = 'block';
+            } else if (item.type === 'text') {
+                textPre.textContent = item.textContent || '';
+                textPre.style.display = 'block';
+            } else {
+                textPre.textContent = `📁 File: ${item.name}\nSize: ${(item.sizeBytes / 1024).toFixed(1)} KB\n\nPreview not directly renderable. Click load to view.`;
+                textPre.style.display = 'block';
+            }
         } else {
             img.style.display = 'none';
+            pdfFrame.style.display = 'none';
+            textPre.style.display = 'none';
             placeholder.style.display = 'block';
             navBar.style.display = 'none';
+            if (btnClear) btnClear.style.display = 'none';
         }
+    }
+
+    // ==========================================
+    // 📱 Mobile Drawer Events (Responsive UI)
+    // ==========================================
+    bindMobileDrawerEvents() {
+        const btnToggleRef = document.getElementById('btnToggleRefSidebar');
+        const btnToggleTool = document.getElementById('btnToggleToolSidebar');
+        const btnCloseRef = document.getElementById('btnCloseRefSidebar');
+        const btnCloseTool = document.getElementById('btnCloseToolSidebar');
+        const sidebarLeft = document.getElementById('sidebarLeft');
+        const sidebarRight = document.getElementById('sidebarRight');
+        const backdrop = document.getElementById('sidebarBackdrop');
+
+        const closeAllDrawers = () => {
+            if (sidebarLeft) sidebarLeft.classList.remove('sidebar-drawer-open');
+            if (sidebarRight) sidebarRight.classList.remove('sidebar-drawer-open');
+            if (backdrop) backdrop.style.display = 'none';
+        };
+
+        if (btnToggleRef && sidebarLeft) {
+            btnToggleRef.addEventListener('click', () => {
+                const isOpen = sidebarLeft.classList.contains('sidebar-drawer-open');
+                closeAllDrawers();
+                if (!isOpen) {
+                    sidebarLeft.classList.add('sidebar-drawer-open');
+                    if (backdrop) backdrop.style.display = 'block';
+                }
+            });
+        }
+
+        if (btnToggleTool && sidebarRight) {
+            btnToggleTool.addEventListener('click', () => {
+                const isOpen = sidebarRight.classList.contains('sidebar-drawer-open');
+                closeAllDrawers();
+                if (!isOpen) {
+                    sidebarRight.classList.add('sidebar-drawer-open');
+                    if (backdrop) backdrop.style.display = 'block';
+                }
+            });
+        }
+
+        if (btnCloseRef) btnCloseRef.addEventListener('click', closeAllDrawers);
+        if (btnCloseTool) btnCloseTool.addEventListener('click', closeAllDrawers);
+        if (backdrop) backdrop.addEventListener('click', closeAllDrawers);
     }
 
     // ==========================================

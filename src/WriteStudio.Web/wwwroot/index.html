@@ -16,8 +16,12 @@
         </div>
 
         <div class="header-right">
+            <!-- Mobile Toggle Buttons -->
+            <button id="btnToggleRefSidebar" class="btn btn-sm btn-secondary mobile-only-btn" title="Toggle Reference Notes">📑 Notes</button>
+            <button id="btnToggleToolSidebar" class="btn btn-sm btn-secondary mobile-only-btn" title="Toggle Drawing Tools">🎨 Tools</button>
+
             <button id="btnOpenLibrary" class="btn btn-sm btn-secondary btn-library" title="Open saved recordings stored in browser local storage">
-                📚 My Recordings <span id="libraryBadge" class="library-badge">0</span>
+                📚 <span class="hide-mobile">My</span> Recordings <span id="libraryBadge" class="library-badge">0</span>
             </button>
 
             <div class="creator-badge" title="Author Information">
@@ -38,36 +42,52 @@
         </div>
     </header>
 
+    <!-- Mobile Drawer Backdrop Overlay -->
+    <div id="sidebarBackdrop" class="sidebar-backdrop" style="display:none"></div>
+
     <!-- Main 3-Pane Studio Container -->
     <main class="studio-main">
-        <!-- LEFT PANE: Private Presenter Reference Slides -->
-        <aside class="sidebar-left">
+        <!-- LEFT PANE: Private Presenter Reference Material -->
+        <aside class="sidebar-left" id="sidebarLeft">
             <div class="pane-title">
                 <span>PRESENTER REFERENCE</span>
-                <span class="badge-private">PRIVATE</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="badge-private">PRIVATE</span>
+                    <button id="btnCloseRefSidebar" class="sidebar-close-btn mobile-only-btn" title="Close Notes">&times;</button>
+                </div>
             </div>
             <div class="pane-subtitle">Visible ONLY to you — Excluded from final video</div>
 
             <div class="slide-uploader">
-                <input type="file" id="slideFileInput" accept="image/*,.pdf" style="display:none">
-                <button id="btnLoadSlides" class="btn btn-secondary">📁 Load Reference Material...</button>
+                <input type="file" id="slideFileInput" multiple style="display:none">
+                <button id="btnLoadSlides" class="btn btn-secondary">📁 Upload Reference Files...</button>
+                <button id="btnClearAllSlides" class="btn btn-sm btn-danger" style="display:none" title="Clear all reference materials">Clear All</button>
             </div>
 
-            <!-- Slide Viewport -->
+            <!-- Uploaded Material Tabs/Pills -->
+            <div id="slideTabsBar" class="slide-tabs-bar" style="display:none"></div>
+
+            <!-- Universal File Viewport -->
             <div class="slide-viewport" id="slideViewport">
                 <div id="slidePlaceholder" class="slide-placeholder">
                     <div class="placeholder-icon">📑</div>
-                    <div class="placeholder-text">No reference slides loaded</div>
-                    <div class="placeholder-hint">Load private notes, solutions, or slides to reference while teaching.</div>
+                    <div class="placeholder-text">No reference material loaded</div>
+                    <div class="placeholder-hint">Upload any images, PDFs, text, code, or notes to reference privately while teaching.</div>
                 </div>
-                <img id="currentSlideImg" class="current-slide-img" style="display:none" alt="Presenter Reference Slide">
+                <img id="currentSlideImg" class="current-slide-img" style="display:none" alt="Presenter Reference Material">
+                <iframe id="currentSlidePdf" class="current-slide-frame" style="display:none"></iframe>
+                <pre id="currentSlideText" class="current-slide-text" style="display:none"></pre>
             </div>
 
-            <!-- Slide Navigation Bar -->
+            <!-- Slide Navigation & Item Management Bar -->
             <div class="slide-nav-bar" id="slideNavBar" style="display:none">
-                <button id="btnPrevSlide" class="btn btn-sm btn-dark">◀ Prev</button>
-                <span id="slideCounter" class="slide-counter">1 / 1</span>
-                <button id="btnNextSlide" class="btn btn-sm btn-dark">Next ▶</button>
+                <button id="btnPrevSlide" class="btn btn-sm btn-dark" title="Previous Item">◀ Prev</button>
+                <div class="slide-meta-info">
+                    <span id="slideCounter" class="slide-counter">1 / 1</span>
+                    <span id="slideFileName" class="slide-file-name">document</span>
+                </div>
+                <button id="btnNextSlide" class="btn btn-sm btn-dark" title="Next Item">Next ▶</button>
+                <button id="btnRemoveCurrentSlide" class="btn btn-sm btn-danger" title="Remove this item">🗑</button>
             </div>
         </aside>
 
@@ -100,8 +120,11 @@
         </section>
 
         <!-- RIGHT PANE: Drawing Tools Palette -->
-        <aside class="sidebar-right">
-            <div class="pane-title">DRAWING TOOLS</div>
+        <aside class="sidebar-right" id="sidebarRight">
+            <div class="pane-title">
+                <span>DRAWING TOOLS</span>
+                <button id="btnCloseToolSidebar" class="sidebar-close-btn mobile-only-btn" title="Close Tools">&times;</button>
+            </div>
 
             <!-- Primary Tools Grid -->
             <div class="tools-grid">
