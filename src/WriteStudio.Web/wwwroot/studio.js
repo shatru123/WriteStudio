@@ -666,28 +666,57 @@ class WriteStudioEngine {
     // Tool & Palette Controls
     // ==========================================
     bindToolEvents() {
-        document.querySelectorAll('.tool-btn').forEach(btn => {
+        const allToolBtns = document.querySelectorAll('.tool-btn');
+        allToolBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
+                allToolBtns.forEach(b => {
+                    if (b.dataset.tool === btn.dataset.tool) b.classList.add('active');
+                    else b.classList.remove('active');
+                });
                 this.activeTool = btn.dataset.tool;
             });
         });
 
-        document.querySelectorAll('.color-btn').forEach(btn => {
+        const allColorBtns = document.querySelectorAll('.color-btn');
+        allColorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
+                allColorBtns.forEach(b => {
+                    if (b.dataset.color && btn.dataset.color && b.dataset.color.toLowerCase() === btn.dataset.color.toLowerCase()) {
+                        b.classList.add('active');
+                    } else {
+                        b.classList.remove('active');
+                    }
+                });
                 this.activeColor = btn.dataset.color;
             });
         });
 
         const slider = document.getElementById('thicknessSlider');
         const thicknessVal = document.getElementById('thicknessValue');
+        const btnCycle = document.getElementById('btnMobileThicknessCycle');
+        const thicknessSteps = [2, 4, 8, 14, 24];
+
         slider.addEventListener('input', (e) => {
             this.activeThickness = parseInt(e.target.value, 10);
             thicknessVal.textContent = this.activeThickness;
+            if (btnCycle) btnCycle.textContent = `${this.activeThickness}px`;
         });
+
+        if (btnCycle) {
+            btnCycle.addEventListener('click', () => {
+                let curIdx = thicknessSteps.indexOf(this.activeThickness);
+                let nextIdx = (curIdx + 1) % thicknessSteps.length;
+                this.activeThickness = thicknessSteps[nextIdx];
+                btnCycle.textContent = `${this.activeThickness}px`;
+                slider.value = this.activeThickness;
+                thicknessVal.textContent = this.activeThickness;
+            });
+        }
+
+        const btnMobileUndo = document.getElementById('btnMobileUndo');
+        const btnMobileRedo = document.getElementById('btnMobileRedo');
+        if (btnMobileUndo) btnMobileUndo.addEventListener('click', () => this.undo());
+        if (btnMobileRedo) btnMobileRedo.addEventListener('click', () => this.redo());
 
         const bgSelector = document.getElementById('bgSelector');
         bgSelector.addEventListener('change', (e) => {
@@ -1157,32 +1186,61 @@ class WriteStudioEngine {
     bindMediaEvents() {
         const btnAudio = document.getElementById('btnEnableAudio');
         const btnCamera = document.getElementById('btnToggleCamera');
+        const btnMobileMic = document.getElementById('btnMobileMic');
+        const btnMobileCam = document.getElementById('btnMobileCam');
+        const btnMobileMediaSettings = document.getElementById('btnMobileMediaSettings');
+        const modalMediaSettings = document.getElementById('mediaSettingsModal');
+        const btnCloseMediaSettings = document.getElementById('btnCloseMediaSettings');
+        const btnCloseMediaSettingsFooter = document.getElementById('btnCloseMediaSettingsFooter');
+        const mobileCameraLayoutSelector = document.getElementById('mobileCameraLayoutSelector');
+        const chkMobileMirror = document.getElementById('chkMobileMirror');
         const video = document.getElementById('webcamVideo');
         const camPlaceholder = document.getElementById('camPlaceholder');
         const cameraPip = document.getElementById('cameraPip');
         const layoutSelector = document.getElementById('cameraLayoutSelector');
         const chkMirror = document.getElementById('chkMirror');
 
-        btnAudio.addEventListener('click', async () => {
+        const toggleAudioHandler = async () => {
             await this.enableMicrophone();
-        });
+        };
 
-        btnCamera.addEventListener('click', async () => {
+        const toggleCameraHandler = async () => {
             if (this.cameraStream) {
                 this.cameraStream.getTracks().forEach(t => t.stop());
                 this.cameraStream = null;
                 video.srcObject = null;
                 camPlaceholder.style.display = 'flex';
-                btnCamera.textContent = 'Enable Camera';
-                btnCamera.classList.remove('btn-primary');
-                btnCamera.classList.add('btn-secondary');
+                if (btnCamera) {
+                    btnCamera.textContent = 'Enable Camera';
+                    btnCamera.classList.remove('btn-primary');
+                    btnCamera.classList.add('btn-secondary');
+                }
+                if (btnMobileCam) {
+                    btnMobileCam.textContent = '📹 Cam';
+                    btnMobileCam.classList.remove('btn-primary');
+                    btnMobileCam.classList.add('btn-secondary');
+                }
             } else {
                 await this.enableCamera();
             }
-        });
+        };
 
-        layoutSelector.addEventListener('change', (e) => {
-            const preset = e.target.value;
+        if (btnAudio) btnAudio.addEventListener('click', toggleAudioHandler);
+        if (btnMobileMic) btnMobileMic.addEventListener('click', toggleAudioHandler);
+
+        if (btnCamera) btnCamera.addEventListener('click', toggleCameraHandler);
+        if (btnMobileCam) btnMobileCam.addEventListener('click', toggleCameraHandler);
+
+        if (btnMobileMediaSettings && modalMediaSettings) {
+            btnMobileMediaSettings.addEventListener('click', () => {
+                modalMediaSettings.style.display = 'block';
+            });
+            const closeSettings = () => { modalMediaSettings.style.display = 'none'; };
+            if (btnCloseMediaSettings) btnCloseMediaSettings.addEventListener('click', closeSettings);
+            if (btnCloseMediaSettingsFooter) btnCloseMediaSettingsFooter.addEventListener('click', closeSettings);
+        }
+
+        const applyLayoutPreset = (preset) => {
             cameraPip.className = `camera-pip pip-${preset.toLowerCase().replace('-', '')}`;
             if (preset === 'BottomRight') cameraPip.className = 'camera-pip pip-bottom-right';
             if (preset === 'BottomLeft') cameraPip.className = 'camera-pip pip-bottom-left';
@@ -1192,6 +1250,9 @@ class WriteStudioEngine {
             if (preset === 'Hidden') cameraPip.className = 'camera-pip pip-hidden';
 
             this.cameraLayout.preset = preset;
+            if (layoutSelector) layoutSelector.value = preset;
+            if (mobileCameraLayoutSelector) mobileCameraLayoutSelector.value = preset;
+
             if (this.recordingState === 'Recording') {
                 this.recordTimelineEvent({
                     $eventType: 'CameraLayoutChanged',
@@ -1200,17 +1261,34 @@ class WriteStudioEngine {
                 });
             }
             this.renderCanvas();
-        });
+        };
 
-        chkMirror.addEventListener('change', (e) => {
-            this.cameraLayout.isMirrored = e.target.checked;
-            cameraPip.classList.toggle('no-mirror', !e.target.checked);
+        if (layoutSelector) {
+            layoutSelector.addEventListener('change', (e) => applyLayoutPreset(e.target.value));
+        }
+        if (mobileCameraLayoutSelector) {
+            mobileCameraLayoutSelector.addEventListener('change', (e) => applyLayoutPreset(e.target.value));
+        }
+
+        const applyMirror = (isMirrored) => {
+            this.cameraLayout.isMirrored = isMirrored;
+            if (chkMirror) chkMirror.checked = isMirrored;
+            if (chkMobileMirror) chkMobileMirror.checked = isMirrored;
+            cameraPip.classList.toggle('no-mirror', !isMirrored);
             this.renderCanvas();
-        });
+        };
+
+        if (chkMirror) {
+            chkMirror.addEventListener('change', (e) => applyMirror(e.target.checked));
+        }
+        if (chkMobileMirror) {
+            chkMobileMirror.addEventListener('change', (e) => applyMirror(e.target.checked));
+        }
     }
 
     async enableMicrophone() {
         const btnAudio = document.getElementById('btnEnableAudio');
+        const btnMobileMic = document.getElementById('btnMobileMic');
         const audioStatus = document.getElementById('audioStatus');
 
         try {
@@ -1221,21 +1299,31 @@ class WriteStudioEngine {
             this.analyserNode.fftSize = 256;
             source.connect(this.analyserNode);
 
-            btnAudio.textContent = '✓ Mic Connected';
-            btnAudio.classList.remove('btn-secondary');
-            btnAudio.classList.add('btn-primary');
-            audioStatus.textContent = 'Microphone active — Live VU metering enabled';
+            if (btnAudio) {
+                btnAudio.textContent = '✓ Mic Connected';
+                btnAudio.classList.remove('btn-secondary');
+                btnAudio.classList.add('btn-primary');
+            }
+            if (btnMobileMic) {
+                btnMobileMic.textContent = '✓ Mic';
+                btnMobileMic.classList.remove('btn-secondary');
+                btnMobileMic.classList.add('btn-primary');
+            }
+            if (audioStatus) {
+                audioStatus.textContent = 'Microphone active — Live VU metering enabled';
+            }
 
             this.startVuMeterLoop();
             return true;
         } catch (err) {
-            audioStatus.textContent = `Microphone error: ${err.message}`;
+            if (audioStatus) audioStatus.textContent = `Microphone error: ${err.message}`;
             return false;
         }
     }
 
     async enableCamera() {
         const btnCamera = document.getElementById('btnToggleCamera');
+        const btnMobileCam = document.getElementById('btnMobileCam');
         const video = document.getElementById('webcamVideo');
         const camPlaceholder = document.getElementById('camPlaceholder');
 
@@ -1246,9 +1334,16 @@ class WriteStudioEngine {
             video.srcObject = this.cameraStream;
             await video.play();
             camPlaceholder.style.display = 'none';
-            btnCamera.textContent = '✓ Camera Active';
-            btnCamera.classList.remove('btn-secondary');
-            btnCamera.classList.add('btn-primary');
+            if (btnCamera) {
+                btnCamera.textContent = '✓ Camera Active';
+                btnCamera.classList.remove('btn-secondary');
+                btnCamera.classList.add('btn-primary');
+            }
+            if (btnMobileCam) {
+                btnMobileCam.textContent = '✓ Cam';
+                btnMobileCam.classList.remove('btn-secondary');
+                btnMobileCam.classList.add('btn-primary');
+            }
             this.renderCanvas();
             return true;
         } catch (err) {
@@ -1259,6 +1354,7 @@ class WriteStudioEngine {
 
     startVuMeterLoop() {
         const vuBar = document.getElementById('vuMeterBar');
+        const mobileVuBar = document.getElementById('mobileVuMeterBar');
         const dataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
 
         const updateMeter = () => {
@@ -1268,7 +1364,8 @@ class WriteStudioEngine {
                 for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
                 const avg = sum / dataArray.length;
                 const percent = Math.min(100, Math.round((avg / 128) * 100));
-                vuBar.style.width = `${percent}%`;
+                if (vuBar) vuBar.style.width = `${percent}%`;
+                if (mobileVuBar) mobileVuBar.style.width = `${percent}%`;
             }
             requestAnimationFrame(updateMeter);
         };
@@ -1302,10 +1399,24 @@ class WriteStudioEngine {
         const btnResume = document.getElementById('btnResume');
         const btnStop = document.getElementById('btnStop');
 
-        btnRecord.addEventListener('click', () => this.startRecording());
-        btnPause.addEventListener('click', () => this.pauseRecording());
-        btnResume.addEventListener('click', () => this.resumeRecording());
-        btnStop.addEventListener('click', () => this.stopRecording());
+        const btnMobileRecord = document.getElementById('btnMobileRecord');
+        const btnMobilePause = document.getElementById('btnMobilePause');
+        const btnMobileResume = document.getElementById('btnMobileResume');
+        const btnMobileStop = document.getElementById('btnMobileStop');
+        const btnMobileExport = document.getElementById('btnMobileExport');
+
+        if (btnRecord) btnRecord.addEventListener('click', () => this.startRecording());
+        if (btnPause) btnPause.addEventListener('click', () => this.pauseRecording());
+        if (btnResume) btnResume.addEventListener('click', () => this.resumeRecording());
+        if (btnStop) btnStop.addEventListener('click', () => this.stopRecording());
+
+        if (btnMobileRecord) btnMobileRecord.addEventListener('click', () => this.startRecording());
+        if (btnMobilePause) btnMobilePause.addEventListener('click', () => this.pauseRecording());
+        if (btnMobileResume) btnMobileResume.addEventListener('click', () => this.resumeRecording());
+        if (btnMobileStop) btnMobileStop.addEventListener('click', () => this.stopRecording());
+        if (btnMobileExport) btnMobileExport.addEventListener('click', () => {
+            document.getElementById('exportModal').style.display = 'block';
+        });
     }
 
     async startRecording() {
@@ -1522,24 +1633,44 @@ class WriteStudioEngine {
         const btnResume = document.getElementById('btnResume');
         const btnStop = document.getElementById('btnStop');
 
+        const btnMobileRecord = document.getElementById('btnMobileRecord');
+        const btnMobilePause = document.getElementById('btnMobilePause');
+        const btnMobileResume = document.getElementById('btnMobileResume');
+        const btnMobileStop = document.getElementById('btnMobileStop');
+
         pill.className = `recording-pill state-${this.recordingState.toLowerCase()}`;
         statusLabel.textContent = this.recordingState.toUpperCase();
 
         if (this.recordingState === 'Recording') {
-            btnRecord.style.display = 'none';
-            btnPause.style.display = 'inline-flex';
-            btnResume.style.display = 'none';
-            btnStop.style.display = 'inline-flex';
+            if (btnRecord) btnRecord.style.display = 'none';
+            if (btnPause) btnPause.style.display = 'inline-flex';
+            if (btnResume) btnResume.style.display = 'none';
+            if (btnStop) btnStop.style.display = 'inline-flex';
+
+            if (btnMobileRecord) btnMobileRecord.style.display = 'none';
+            if (btnMobilePause) btnMobilePause.style.display = 'inline-flex';
+            if (btnMobileResume) btnMobileResume.style.display = 'none';
+            if (btnMobileStop) btnMobileStop.style.display = 'inline-flex';
         } else if (this.recordingState === 'Paused') {
-            btnRecord.style.display = 'none';
-            btnPause.style.display = 'none';
-            btnResume.style.display = 'inline-flex';
-            btnStop.style.display = 'inline-flex';
+            if (btnRecord) btnRecord.style.display = 'none';
+            if (btnPause) btnPause.style.display = 'none';
+            if (btnResume) btnResume.style.display = 'inline-flex';
+            if (btnStop) btnStop.style.display = 'inline-flex';
+
+            if (btnMobileRecord) btnMobileRecord.style.display = 'none';
+            if (btnMobilePause) btnMobilePause.style.display = 'none';
+            if (btnMobileResume) btnMobileResume.style.display = 'inline-flex';
+            if (btnMobileStop) btnMobileStop.style.display = 'inline-flex';
         } else {
-            btnRecord.style.display = 'inline-flex';
-            btnPause.style.display = 'none';
-            btnResume.style.display = 'none';
-            btnStop.style.display = 'none';
+            if (btnRecord) btnRecord.style.display = 'inline-flex';
+            if (btnPause) btnPause.style.display = 'none';
+            if (btnResume) btnResume.style.display = 'none';
+            if (btnStop) btnStop.style.display = 'none';
+
+            if (btnMobileRecord) btnMobileRecord.style.display = 'inline-flex';
+            if (btnMobilePause) btnMobilePause.style.display = 'none';
+            if (btnMobileResume) btnMobileResume.style.display = 'none';
+            if (btnMobileStop) btnMobileStop.style.display = 'none';
         }
     }
 

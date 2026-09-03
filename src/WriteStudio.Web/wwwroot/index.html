@@ -188,8 +188,8 @@
         </aside>
     </main>
 
-    <!-- Bottom Studio Control Dock -->
-    <footer class="studio-dock">
+    <!-- Bottom Studio Control Dock (Desktop) -->
+    <footer class="studio-dock desktop-only-dock">
         <!-- 1. Audio & VU Meter -->
         <div class="dock-panel dock-audio">
             <div class="panel-header">🎙 MICROPHONE & AUDIO</div>
@@ -239,9 +239,98 @@
         </div>
     </footer>
 
+    <!-- 📱 Mobile Bottom Drawing & Action Toolbar (Mobile & Tablet View) -->
+    <nav class="mobile-dock-toolbar" id="mobileDockToolbar">
+        <!-- Row 1: Fast Drawing Tools & Colors -->
+        <div class="mobile-dock-row mobile-tools-row">
+            <div class="mobile-tool-group">
+                <button class="mobile-tool-btn tool-btn active" data-tool="pen" title="Pen">✏️</button>
+                <button class="mobile-tool-btn tool-btn" data-tool="pencil" title="Pencil">🖍️</button>
+                <button class="mobile-tool-btn tool-btn" data-tool="highlighter" title="Marker">✨</button>
+                <button class="mobile-tool-btn tool-btn" data-tool="eraser" title="Eraser">🧹</button>
+                <button class="mobile-tool-btn tool-btn" data-tool="text" title="Text">🔤</button>
+            </div>
+
+            <div class="mobile-sep"></div>
+
+            <div class="mobile-palette-group">
+                <button class="mobile-color-dot color-btn active" data-color="#FFFFFF" style="background:#FFFFFF"></button>
+                <button class="mobile-color-dot color-btn" data-color="#F5C518" style="background:#F5C518"></button>
+                <button class="mobile-color-dot color-btn" data-color="#2EB85C" style="background:#2EB85C"></button>
+                <button class="mobile-color-dot color-btn" data-color="#3483EB" style="background:#3483EB"></button>
+                <button class="mobile-color-dot color-btn" data-color="#EB3434" style="background:#EB3434"></button>
+                <button class="mobile-color-dot color-btn" data-color="#9B59B6" style="background:#9B59B6"></button>
+            </div>
+
+            <div class="mobile-sep"></div>
+
+            <div class="mobile-tool-group">
+                <button id="btnMobileThicknessCycle" class="mobile-tool-btn mobile-thickness-btn" title="Cycle Stroke Thickness">4px</button>
+                <button id="btnMobileUndo" class="mobile-tool-btn" title="Undo">↩️</button>
+                <button id="btnMobileRedo" class="mobile-tool-btn" title="Redo">↪️</button>
+            </div>
+        </div>
+
+        <!-- Row 2: Media Toggles & Recording Controls -->
+        <div class="mobile-dock-row mobile-actions-row">
+            <div class="mobile-media-group">
+                <button id="btnMobileMic" class="btn btn-sm btn-secondary mobile-icon-btn" title="Toggle Microphone">🎙️ Mic</button>
+                <button id="btnMobileCam" class="btn btn-sm btn-secondary mobile-icon-btn" title="Toggle Camera">📹 Cam</button>
+                <button id="btnMobileMediaSettings" class="btn btn-sm btn-secondary mobile-icon-btn" title="Camera & Audio Settings">⚙️</button>
+            </div>
+
+            <div class="mobile-recording-group">
+                <button id="btnMobileRecord" class="btn btn-sm btn-record">● RECORD</button>
+                <button id="btnMobilePause" class="btn btn-sm btn-pause" style="display:none">❚❚ PAUSE</button>
+                <button id="btnMobileResume" class="btn btn-sm btn-resume" style="display:none">▶ RESUME</button>
+                <button id="btnMobileStop" class="btn btn-sm btn-stop" style="display:none">◼ STOP</button>
+                <button id="btnMobileExport" class="btn btn-sm btn-export">🎬 Export</button>
+            </div>
+        </div>
+    </nav>
+
     <!-- Bottom Creator Credit Strip -->
     <div class="creator-bottom-bar">
         <span>WriteStudio &bull; Created by <strong>Shatrughna Ambhore</strong> &bull; <a href="mailto:ambhoreshatrughna@gmail.com">ambhoreshatrughna@gmail.com</a> &bull; <a href="tel:+919604466334">+91 9604466334</a></span>
+    </div>
+
+    <!-- ⚙️ Mobile Media Settings Modal -->
+    <div id="mediaSettingsModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>⚙️ Camera & Audio Settings</h3>
+                <button id="btnCloseMediaSettings" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Camera Picture-in-Picture Position:</label>
+                    <select id="mobileCameraLayoutSelector" class="form-select">
+                        <option value="BottomRight" selected>Bottom-Right (Standard)</option>
+                        <option value="BottomLeft">Bottom-Left</option>
+                        <option value="TopRight">Top-Right</option>
+                        <option value="TopLeft">Top-Left</option>
+                        <option value="Fullscreen">Fullscreen</option>
+                        <option value="Hidden">Hidden</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="mirror-toggle" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="chkMobileMirror" checked> Mirror Webcam Feed
+                    </label>
+                </div>
+                <div class="divider" style="margin:14px 0"></div>
+                <div class="form-group">
+                    <label>Microphone Status:</label>
+                    <div id="mobileAudioStatus" style="font-size:12px; color:#94A3B8; margin-bottom:8px">Live input VU meter:</div>
+                    <div class="vu-meter-container" style="height:12px; border-radius:6px;">
+                        <div id="mobileVuMeterBar" class="vu-meter-bar"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnCloseMediaSettingsFooter" class="btn btn-primary">Done</button>
+            </div>
+        </div>
     </div>
 
     <!-- Export Modal Dialog -->
