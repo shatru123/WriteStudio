@@ -177,6 +177,7 @@ class WriteStudioEngine {
         this.bindExportEvents();
         this.bindLibraryEvents();
         this.bindMobileDrawerEvents();
+        this.bindResizerEvents();
 
         this.renderCanvas();
         this.updateLibraryBadge();
@@ -1082,6 +1083,72 @@ class WriteStudioEngine {
         if (btnCloseRef) btnCloseRef.addEventListener('click', closeAllDrawers);
         if (btnCloseTool) btnCloseTool.addEventListener('click', closeAllDrawers);
         if (backdrop) backdrop.addEventListener('click', closeAllDrawers);
+    }
+
+    // ==========================================
+    // ↔ Draggable Splitter Resizer
+    // ==========================================
+    bindResizerEvents() {
+        const resizer = document.getElementById('resizerLeft');
+        const sidebar = document.getElementById('sidebarLeft');
+        const studioMain = document.querySelector('.studio-main');
+        if (!resizer || !sidebar || !studioMain) return;
+
+        let isResizing = false;
+
+        const onPointerDown = (e) => {
+            isResizing = true;
+            resizer.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            resizer.setPointerCapture(e.pointerId);
+        };
+
+        const onPointerMove = (e) => {
+            if (!isResizing) return;
+            const containerRect = studioMain.getBoundingClientRect();
+            let newWidth = e.clientX - containerRect.left;
+            
+            // Constrain between min 220px and max (containerWidth - 320px)
+            const minWidth = 220;
+            const maxWidth = Math.max(300, containerRect.width - 320);
+            newWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
+
+            sidebar.style.width = `${newWidth}px`;
+            document.documentElement.style.setProperty('--sidebar-left-width', `${newWidth}px`);
+            this.setupCanvasSize();
+        };
+
+        const onPointerUp = (e) => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                try { resizer.releasePointerCapture(e.pointerId); } catch {}
+                this.setupCanvasSize();
+            }
+        };
+
+        resizer.addEventListener('pointerdown', onPointerDown);
+        resizer.addEventListener('pointermove', onPointerMove);
+        resizer.addEventListener('pointerup', onPointerUp);
+        resizer.addEventListener('pointercancel', onPointerUp);
+
+        // Double-click to toggle 50% split / default 360px
+        resizer.addEventListener('dblclick', () => {
+            const currentW = sidebar.getBoundingClientRect().width;
+            const containerW = studioMain.getBoundingClientRect().width;
+            let targetW = 360;
+            if (currentW < containerW * 0.45) {
+                targetW = Math.round(containerW * 0.5); // expand to 50% split
+            } else {
+                targetW = 360; // collapse to default
+            }
+            sidebar.style.width = `${targetW}px`;
+            document.documentElement.style.setProperty('--sidebar-left-width', `${targetW}px`);
+            this.setupCanvasSize();
+        });
     }
 
     // ==========================================

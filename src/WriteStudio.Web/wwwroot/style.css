@@ -155,22 +155,63 @@ body {
     font-weight: 700;
 }
 
-/* 3-Pane Layout */
+/* 3-Pane Layout with Dynamic Resizing */
 .studio-main {
     flex: 1;
-    display: grid;
-    grid-template-columns: 280px 1fr 240px;
+    display: flex;
+    flex-direction: row;
     overflow: hidden;
     position: relative;
 }
 
-/* Left Sidebar - Slides */
+/* Left Sidebar - Presenter Reference */
 .sidebar-left {
+    width: var(--sidebar-left-width, 360px);
+    min-width: 220px;
+    max-width: 80vw;
     background-color: #0D1117;
     border-right: 1px solid #1E293B;
     display: flex;
     flex-direction: column;
     padding: 12px;
+    flex-shrink: 0;
+    position: relative;
+}
+
+/* Draggable Splitter Resizer Handle */
+.resizer-handle {
+    width: 8px;
+    background: transparent;
+    cursor: col-resize;
+    position: relative;
+    z-index: 15;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease;
+    user-select: none;
+    touch-action: none;
+}
+
+.resizer-handle::after {
+    content: '';
+    width: 3px;
+    height: 38px;
+    border-radius: 2px;
+    background: #334155;
+    transition: background-color 0.15s ease, height 0.15s ease;
+}
+
+.resizer-handle:hover,
+.resizer-handle.resizing {
+    background: rgba(56, 189, 248, 0.15);
+}
+
+.resizer-handle:hover::after,
+.resizer-handle.resizing::after {
+    background: #38BDF8;
+    height: 68px;
 }
 
 .pane-title {
@@ -339,10 +380,13 @@ body {
 
 /* Center Canvas */
 .canvas-center {
+    flex: 1;
+    min-width: 260px;
     display: flex;
     flex-direction: column;
     background-color: #131720;
     position: relative;
+    overflow: hidden;
 }
 
 .canvas-wrapper {
