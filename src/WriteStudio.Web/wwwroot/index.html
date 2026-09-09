@@ -434,7 +434,30 @@
         </div>
     </div>
 
-    <script src="jszip.min.js?v=2.3"></script>
-    <script src="studio.js?v=2.3"></script>
+    <!-- 📊 Fullscreen / High-Definition Slide Modal -->
+    <div id="slideFullscreenModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog modal-slide-fullscreen">
+            <div class="modal-header">
+                <h3 id="slideModalTitle">📊 Slide Preview (High Definition)</h3>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button id="btnToggleModalSlideTheme" class="btn btn-sm btn-secondary" title="Toggle Light/Dark Slide Theme">☀️ / 🌙</button>
+                    <button id="btnCloseSlideModal" class="btn-close">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body slide-fullscreen-body" id="slideModalBody">
+                <!-- Injected dynamically -->
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+                <div style="display:flex; gap:8px;">
+                    <button id="btnModalPrevSlide" class="btn btn-sm btn-secondary">◀ Prev Slide</button>
+                    <button id="btnModalNextSlide" class="btn btn-sm btn-secondary">Next Slide ▶</button>
+                </div>
+                <button id="btnCloseSlideModalFooter" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="jszip.min.js?v=2.4"></script>
+    <script src="studio.js?v=2.4"></script>
 </body>
 </html>

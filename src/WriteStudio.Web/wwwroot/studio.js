@@ -134,6 +134,8 @@ class WriteStudioEngine {
         // Presenter Reference Slides
         this.slides = [];
         this.currentSlideIndex = -1;
+        this.slideTheme = 'light';
+        this.slideFontSize = 16;
 
         // Hardware & Media Streams
         this.audioContext = null;
@@ -172,6 +174,7 @@ class WriteStudioEngine {
         this.bindCanvasEvents();
         this.bindToolEvents();
         this.bindSlideEvents();
+        this.bindSlideModalEvents();
         this.bindMediaEvents();
         this.bindRecordingEvents();
         this.bindExportEvents();
@@ -1392,72 +1395,87 @@ class WriteStudioEngine {
                 if (pptxContainer) {
                     pptxContainer.innerHTML = '';
 
-                    // Header Badge
+                    // Header Controls Bar
                     const header = document.createElement('div');
                     header.className = 'pptx-slide-header';
-                    header.innerHTML = `
-                        <div class="pptx-deck-badge">📊 ${item.presentationName || 'PowerPoint'}</div>
-                        <div style="font-size:11px; color:#94A3B8; font-weight:600;">Slide ${item.slideNumber} of ${item.totalSlidesInDeck}</div>
-                    `;
+                    
+                    const deckBadge = document.createElement('div');
+                    deckBadge.className = 'pptx-deck-badge';
+                    deckBadge.title = item.presentationName || 'PowerPoint Presentation';
+                    deckBadge.innerHTML = `📊 ${item.presentationName || 'PowerPoint'}`;
+                    header.appendChild(deckBadge);
+
+                    const controls = document.createElement('div');
+                    controls.className = 'pptx-viewer-controls';
+
+                    // Jump Selector
+                    const sameDeckSlides = this.slides
+                        .map((s, i) => ({ slide: s, index: i }))
+                        .filter(s => s.slide.presentationName === item.presentationName);
+
+                    if (sameDeckSlides.length > 1) {
+                        const selectJump = document.createElement('select');
+                        selectJump.className = 'pptx-jump-select';
+                        selectJump.title = 'Jump to slide';
+                        sameDeckSlides.forEach(s => {
+                            const opt = document.createElement('option');
+                            opt.value = s.index;
+                            opt.selected = s.index === this.currentSlideIndex;
+                            opt.textContent = `Slide ${s.slide.slideNumber}: ${(s.slide.title || '').slice(0, 24)}`;
+                            selectJump.appendChild(opt);
+                        });
+                        selectJump.addEventListener('change', (e) => {
+                            this.currentSlideIndex = parseInt(e.target.value, 10);
+                            this.updateSlideView();
+                        });
+                        controls.appendChild(selectJump);
+                    }
+
+                    // Font Size Buttons
+                    const btnFontDec = document.createElement('button');
+                    btnFontDec.className = 'pptx-ctrl-btn';
+                    btnFontDec.textContent = 'A-';
+                    btnFontDec.title = 'Decrease text size';
+                    btnFontDec.addEventListener('click', () => {
+                        this.slideFontSize = Math.max(12, (this.slideFontSize || 16) - 2);
+                        this.updateSlideView();
+                    });
+                    controls.appendChild(btnFontDec);
+
+                    const btnFontInc = document.createElement('button');
+                    btnFontInc.className = 'pptx-ctrl-btn';
+                    btnFontInc.textContent = 'A+';
+                    btnFontInc.title = 'Increase text size';
+                    btnFontInc.addEventListener('click', () => {
+                        this.slideFontSize = Math.min(26, (this.slideFontSize || 16) + 2);
+                        this.updateSlideView();
+                    });
+                    controls.appendChild(btnFontInc);
+
+                    // Theme Toggle
+                    const btnTheme = document.createElement('button');
+                    btnTheme.className = 'pptx-ctrl-btn';
+                    btnTheme.innerHTML = this.slideTheme === 'dark' ? '☀️ Light' : '🌙 Dark';
+                    btnTheme.title = 'Toggle Slide Contrast Theme';
+                    btnTheme.addEventListener('click', () => {
+                        this.slideTheme = this.slideTheme === 'dark' ? 'light' : 'dark';
+                        this.updateSlideView();
+                    });
+                    controls.appendChild(btnTheme);
+
+                    // Fullscreen Expand
+                    const btnExpand = document.createElement('button');
+                    btnExpand.className = 'pptx-ctrl-btn';
+                    btnExpand.innerHTML = '⛶ HD';
+                    btnExpand.title = 'Open Fullscreen Slide View';
+                    btnExpand.addEventListener('click', () => this.openSlideFullscreenModal(item));
+                    controls.appendChild(btnExpand);
+
+                    header.appendChild(controls);
                     pptxContainer.appendChild(header);
 
-                    // Slide Card
-                    const card = document.createElement('div');
-                    card.className = 'pptx-slide-card';
-
-                    if (item.title) {
-                        const titleEl = document.createElement('div');
-                        titleEl.className = 'pptx-title';
-                        titleEl.textContent = item.title;
-                        card.appendChild(titleEl);
-                    }
-
-                    if (item.bullets && item.bullets.length > 0) {
-                        const ul = document.createElement('ul');
-                        ul.className = 'pptx-bullets';
-                        item.bullets.forEach(b => {
-                            const li = document.createElement('li');
-                            li.className = `pptx-bullet-item pptx-bullet-lvl-${Math.min(b.level, 2)}`;
-                            li.textContent = b.text;
-                            ul.appendChild(li);
-                        });
-                        card.appendChild(ul);
-                    }
-
-                    // Tables
-                    if (item.tables && item.tables.length > 0) {
-                        item.tables.forEach(tbl => {
-                            const tableEl = document.createElement('table');
-                            tableEl.className = 'pptx-table';
-                            tbl.forEach((row, rIdx) => {
-                                const tr = document.createElement('tr');
-                                row.forEach(cell => {
-                                    const cellEl = document.createElement(rIdx === 0 ? 'th' : 'td');
-                                    cellEl.textContent = cell;
-                                    tr.appendChild(cellEl);
-                                });
-                                tableEl.appendChild(tr);
-                            });
-                            card.appendChild(tableEl);
-                        });
-                    }
-
-                    // Embedded Images / Diagrams
-                    if (item.images && item.images.length > 0) {
-                        const imgGrid = document.createElement('div');
-                        imgGrid.className = 'pptx-images-grid';
-                        item.images.forEach(imgData => {
-                            const imgEl = document.createElement('img');
-                            imgEl.className = 'pptx-image-item';
-                            imgEl.src = imgData.url;
-                            imgEl.alt = imgData.name;
-                            imgEl.title = 'Click to open full size diagram';
-                            imgEl.addEventListener('click', () => window.open(imgData.url, '_blank'));
-                            imgGrid.appendChild(imgEl);
-                        });
-                        card.appendChild(imgGrid);
-                    }
-
+                    // Slide Card Canvas
+                    const card = this.createPptxSlideCardElement(item);
                     pptxContainer.appendChild(card);
 
                     // Speaker Notes Box (Private)
@@ -2521,6 +2539,148 @@ class WriteStudioEngine {
 
         playerModal.style.display = 'flex';
         player.play();
+    }
+
+    createPptxSlideCardElement(item, isFullscreen = false) {
+        const card = document.createElement('div');
+        card.className = `pptx-slide-card ${this.slideTheme === 'dark' ? 'theme-dark' : ''}`;
+        
+        const baseSize = this.slideFontSize || 16;
+        const titleSize = isFullscreen ? baseSize + 8 : baseSize + 4;
+        const textSize = isFullscreen ? baseSize + 2 : baseSize;
+        
+        card.style.setProperty('--pptx-title-size', `${titleSize}px`);
+        card.style.setProperty('--pptx-text-size', `${textSize}px`);
+
+        if (item.title) {
+            const titleEl = document.createElement('div');
+            titleEl.className = 'pptx-title';
+            titleEl.textContent = item.title;
+            card.appendChild(titleEl);
+        }
+
+        if (item.bullets && item.bullets.length > 0) {
+            const ul = document.createElement('ul');
+            ul.className = 'pptx-bullets';
+            item.bullets.forEach(b => {
+                const li = document.createElement('li');
+                li.className = `pptx-bullet-item pptx-bullet-lvl-${Math.min(b.level, 2)}`;
+                li.textContent = b.text;
+                ul.appendChild(li);
+            });
+            card.appendChild(ul);
+        }
+
+        // Tables
+        if (item.tables && item.tables.length > 0) {
+            item.tables.forEach(tbl => {
+                const tableEl = document.createElement('table');
+                tableEl.className = 'pptx-table';
+                tbl.forEach((row, rIdx) => {
+                    const tr = document.createElement('tr');
+                    row.forEach(cell => {
+                        const cellEl = document.createElement(rIdx === 0 ? 'th' : 'td');
+                        cellEl.textContent = cell;
+                        tr.appendChild(cellEl);
+                    });
+                    tableEl.appendChild(tr);
+                });
+                card.appendChild(tableEl);
+            });
+        }
+
+        // Embedded Images / Diagrams
+        if (item.images && item.images.length > 0) {
+            const imgGrid = document.createElement('div');
+            imgGrid.className = 'pptx-images-grid';
+            item.images.forEach(imgData => {
+                const imgEl = document.createElement('img');
+                imgEl.className = 'pptx-image-item';
+                imgEl.src = imgData.url;
+                imgEl.alt = imgData.name;
+                imgEl.title = 'Click to open diagram';
+                imgEl.addEventListener('click', () => window.open(imgData.url, '_blank'));
+                imgGrid.appendChild(imgEl);
+            });
+            card.appendChild(imgGrid);
+        }
+
+        return card;
+    }
+
+    openSlideFullscreenModal(item) {
+        const modal = document.getElementById('slideFullscreenModal');
+        const modalTitle = document.getElementById('slideModalTitle');
+        const modalBody = document.getElementById('slideModalBody');
+        if (!modal || !modalBody) return;
+
+        modalTitle.textContent = `📊 ${item.presentationName || 'PowerPoint'} — Slide ${item.slideNumber} of ${item.totalSlidesInDeck}`;
+        modalBody.innerHTML = '';
+
+        const card = this.createPptxSlideCardElement(item, true);
+        modalBody.appendChild(card);
+
+        if (item.speakerNotes && item.speakerNotes.trim().length > 0) {
+            const notesBox = document.createElement('div');
+            notesBox.className = 'pptx-notes-box';
+            notesBox.style.marginTop = '16px';
+            notesBox.innerHTML = `
+                <div class="pptx-notes-label">🎙️ Presenter / Speaker Notes (Private):</div>
+                <div style="font-size:14px; font-weight:500;">${item.speakerNotes}</div>
+            `;
+            modalBody.appendChild(notesBox);
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    bindSlideModalEvents() {
+        const modal = document.getElementById('slideFullscreenModal');
+        const btnClose = document.getElementById('btnCloseSlideModal');
+        const btnCloseFooter = document.getElementById('btnCloseSlideModalFooter');
+        const btnTheme = document.getElementById('btnToggleModalSlideTheme');
+        const btnPrev = document.getElementById('btnModalPrevSlide');
+        const btnNext = document.getElementById('btnModalNextSlide');
+
+        const closeModal = () => {
+            if (modal) modal.style.display = 'none';
+        };
+
+        if (btnClose) btnClose.addEventListener('click', closeModal);
+        if (btnCloseFooter) btnCloseFooter.addEventListener('click', closeModal);
+        if (modal) modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        if (btnTheme) {
+            btnTheme.addEventListener('click', () => {
+                this.slideTheme = this.slideTheme === 'dark' ? 'light' : 'dark';
+                if (this.currentSlideIndex >= 0 && this.slides[this.currentSlideIndex]) {
+                    this.openSlideFullscreenModal(this.slides[this.currentSlideIndex]);
+                    this.updateSlideView();
+                }
+            });
+        }
+
+        if (btnPrev) {
+            btnPrev.addEventListener('click', () => {
+                if (this.currentSlideIndex > 0) {
+                    this.currentSlideIndex--;
+                    this.updateSlideView();
+                    this.openSlideFullscreenModal(this.slides[this.currentSlideIndex]);
+                }
+            });
+        }
+
+        if (btnNext) {
+            btnNext.addEventListener('click', () => {
+                if (this.currentSlideIndex < this.slides.length - 1) {
+                    this.currentSlideIndex++;
+                    this.updateSlideView();
+                    this.openSlideFullscreenModal(this.slides[this.currentSlideIndex]);
+                }
+            });
+        }
     }
 
     // Utilities
