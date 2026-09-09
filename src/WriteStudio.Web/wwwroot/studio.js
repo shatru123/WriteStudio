@@ -1074,17 +1074,67 @@ class WriteStudioEngine {
 
                 // Extract Speaker Notes if present
                 let speakerNotes = '';
-                const notesFileName = `ppt/notesSlides/notesSlide${slideNum}.xml`;
-                if (zip.file(notesFileName)) {
-                    const notesXml = await zip.file(notesFileName).async('string');
-                    const notesDoc = parser.parseFromString(notesXml, 'application/xml');
-                    const textNodes = notesDoc.getElementsByTagName('a:t');
-                    const notesArr = [];
-                    for (let t = 0; t < textNodes.length; t++) {
-                        const txt = textNodes[t].textContent.trim();
-                        if (txt && !/^\d+$/.test(txt)) notesArr.push(txt);
+                let notesFilePath = `ppt/notesSlides/notesSlide${slideNum}.xml`;
+
+                if (zip.file(relsFileName)) {
+                    try {
+                        const relsXml = await zip.file(relsFileName).async('string');
+                        const relsDoc = parser.parseFromString(relsXml, 'application/xml');
+                        const relNodes = relsDoc.getElementsByTagName('Relationship');
+                        for (let r = 0; r < relNodes.length; r++) {
+                            const relType = relNodes[r].getAttribute('Type') || '';
+                            const target = relNodes[r].getAttribute('Target') || '';
+                            if (relType.includes('notesSlide') || target.includes('notesSlide')) {
+                                notesFilePath = 'ppt/' + target.replace(/^\.\.\//, '');
+                                break;
+                            }
+                        }
+                    } catch {}
+                }
+
+                const notesFile = zip.file(notesFilePath);
+                if (notesFile) {
+                    try {
+                        const notesXml = await notesFile.async('string');
+                        const notesDoc = parser.parseFromString(notesXml, 'application/xml');
+                        const shapes = notesDoc.getElementsByTagName('p:sp');
+                        const noteParagraphs = [];
+
+                        for (let s = 0; s < shapes.length; s++) {
+                            const shape = shapes[s];
+                            const ph = shape.getElementsByTagName('p:ph')[0];
+                            const phType = ph ? ph.getAttribute('type') : null;
+
+                            // Skip slide thumbnail image placeholder
+                            if (phType === 'sldImg') continue;
+
+                            const paragraphs = shape.getElementsByTagName('a:p');
+                            for (let p = 0; p < paragraphs.length; p++) {
+                                const para = paragraphs[p];
+                                const textNodes = para.getElementsByTagName('a:t');
+                                let pText = '';
+                                for (let t = 0; t < textNodes.length; t++) {
+                                    pText += textNodes[t].textContent;
+                                }
+                                pText = pText.trim();
+                                if (pText && !/^\d+$/.test(pText)) {
+                                    noteParagraphs.push(pText);
+                                }
+                            }
+                        }
+
+                        if (noteParagraphs.length === 0) {
+                            const textNodes = notesDoc.getElementsByTagName('a:t');
+                            for (let t = 0; t < textNodes.length; t++) {
+                                const txt = textNodes[t].textContent.trim();
+                                if (txt && !/^\d+$/.test(txt)) noteParagraphs.push(txt);
+                            }
+                        }
+
+                        speakerNotes = noteParagraphs.join('\n\n');
+                    } catch (err) {
+                        console.warn('Could not parse notes slide:', err);
                     }
-                    speakerNotes = notesArr.join(' ');
                 }
 
                 // Extract Slide Title
@@ -1180,69 +1230,130 @@ class WriteStudioEngine {
         try {
             const buffer = await file.arrayBuffer();
             const bytes = new Uint8Array(buffer);
-            const textChunks = [];
+            const extractedImages = [];
+            const imageRanges = [];
 
-            // 1. Extract UTF-16LE Unicode Strings (Standard PPT text encoding)
-            let current16 = '';
+            // 1. Locate and extract embedded PNG images (Magic: 89 50 4E 47)
+            for (let i = 0; i < bytes.length - 8; i++) {
+                if (bytes[i] === 0x89 && bytes[i+1] === 0x50 && bytes[i+2] === 0x4E && bytes[i+3] === 0x47 &&
+                    bytes[i+4] === 0x0D && bytes[i+5] === 0x0A && bytes[i+6] === 0x1A && bytes[i+7] === 0x0A) {
+                    let endIdx = -1;
+                    for (let j = i + 8; j < bytes.length - 7; j++) {
+                        if (bytes[j] === 0x49 && bytes[j+1] === 0x45 && bytes[j+2] === 0x4E && bytes[j+3] === 0x44 &&
+                            bytes[j+4] === 0xAE && bytes[j+5] === 0x42 && bytes[j+6] === 0x60 && bytes[j+7] === 0x82) {
+                            endIdx = j + 8;
+                            break;
+                        }
+                    }
+                    if (endIdx > i && (endIdx - i) < 25000000) {
+                        const pngBytes = bytes.slice(i, endIdx);
+                        const blob = new Blob([pngBytes], { type: 'image/png' });
+                        extractedImages.push({
+                            url: URL.createObjectURL(blob),
+                            name: `diagram_${extractedImages.length + 1}.png`
+                        });
+                        imageRanges.push({ start: i, end: endIdx });
+                        i = endIdx;
+                    }
+                }
+            }
+
+            // 2. Locate and extract embedded JPEG images (Magic: FF D8 FF)
+            for (let i = 0; i < bytes.length - 3; i++) {
+                if (bytes[i] === 0xFF && bytes[i+1] === 0xD8 && bytes[i+2] === 0xFF) {
+                    let endIdx = -1;
+                    for (let j = i + 3; j < bytes.length - 1; j++) {
+                        if (bytes[j] === 0xFF && bytes[j+1] === 0xD9) {
+                            endIdx = j + 2;
+                            break;
+                        }
+                    }
+                    if (endIdx > i && (endIdx - i) < 25000000) {
+                        const jpegBytes = bytes.slice(i, endIdx);
+                        const blob = new Blob([jpegBytes], { type: 'image/jpeg' });
+                        extractedImages.push({
+                            url: URL.createObjectURL(blob),
+                            name: `slide_image_${extractedImages.length + 1}.jpg`
+                        });
+                        imageRanges.push({ start: i, end: endIdx });
+                        i = endIdx;
+                    }
+                }
+            }
+
+            const isInImageRange = (pos) => {
+                for (let r = 0; r < imageRanges.length; r++) {
+                    if (pos >= imageRanges[r].start && pos < imageRanges[r].end) return true;
+                }
+                return false;
+            };
+
+            const isHumanText = (str) => {
+                if (!str || str.length < 3 || str.length > 250) return false;
+                // Strict rejection of binary image chunks / noise
+                if (/PNG|IHDR|IDAT|IEND|JFIF|Exif|Adobe|sRGB|gAMA|cHRM|Photoshop|Current User|PowerPoint Document|SummaryInformation|DocumentSummaryInformation|Default Design|Arial|Calibri|Times New Roman|Wingdings|Tahoma/i.test(str)) {
+                    return false;
+                }
+                const validCount = (str.match(/[a-zA-Z0-9\s.,!?:;"'()/\-_@#$%&*]/g) || []).length;
+                if (validCount / str.length < 0.75) return false;
+                if (!/[a-zA-Z]{2,}/.test(str)) return false;
+                return true;
+            };
+
+            // 3. Extract UTF-16LE text strings outside image ranges
+            const textChunks = [];
+            let cur16 = '';
             for (let i = 0; i < bytes.length - 1; i += 2) {
+                if (isInImageRange(i)) continue;
                 const code = bytes[i] | (bytes[i + 1] << 8);
                 if ((code >= 32 && code <= 126) || code === 10 || code === 13 || (code >= 160 && code <= 65533)) {
-                    current16 += String.fromCharCode(code);
+                    cur16 += String.fromCharCode(code);
                 } else {
-                    if (current16.trim().length >= 3) {
-                        textChunks.push(current16.trim());
-                    }
-                    current16 = '';
+                    const trimmed = cur16.trim();
+                    if (isHumanText(trimmed)) textChunks.push(trimmed);
+                    cur16 = '';
                 }
             }
-            if (current16.trim().length >= 3) textChunks.push(current16.trim());
+            if (isHumanText(cur16.trim())) textChunks.push(cur16.trim());
 
-            // 2. Extract 1-byte ASCII Strings
-            let currentAscii = '';
+            // 4. Extract ASCII text strings outside image ranges
+            let curAscii = '';
             for (let i = 0; i < bytes.length; i++) {
+                if (isInImageRange(i)) continue;
                 const b = bytes[i];
                 if ((b >= 32 && b <= 126) || b === 10 || b === 13) {
-                    currentAscii += String.fromCharCode(b);
+                    curAscii += String.fromCharCode(b);
                 } else {
-                    if (currentAscii.trim().length >= 3) {
-                        textChunks.push(currentAscii.trim());
-                    }
-                    currentAscii = '';
+                    const trimmed = curAscii.trim();
+                    if (isHumanText(trimmed)) textChunks.push(trimmed);
+                    curAscii = '';
                 }
             }
-            if (currentAscii.trim().length >= 3) textChunks.push(currentAscii.trim());
+            if (isHumanText(curAscii.trim())) textChunks.push(curAscii.trim());
 
-            // Filter out binary metadata noise and font tables
-            const ignoreList = [
-                'PowerPoint Document', 'Current User', 'SummaryInformation', 'DocumentSummaryInformation',
-                'Default Design', 'Arial', 'Calibri', 'Times New Roman', 'Wingdings', 'Tahoma',
-                'Header', 'Footer', 'Slide Master', 'Title Master'
-            ];
-
-            const cleanChunks = [];
+            // Deduplicate strings
+            const uniqueChunks = [];
             const seen = new Set();
             for (const chunk of textChunks) {
-                const trimmed = chunk.trim();
-                if (trimmed.length < 3) continue;
-                if (ignoreList.includes(trimmed)) continue;
-                if (/^[^\w\s]+$/.test(trimmed)) continue;
-                if (!seen.has(trimmed)) {
-                    seen.add(trimmed);
-                    cleanChunks.push(trimmed);
+                if (!seen.has(chunk.toLowerCase())) {
+                    seen.add(chunk.toLowerCase());
+                    uniqueChunks.push(chunk);
                 }
             }
 
-            if (cleanChunks.length === 0) {
-                cleanChunks.push(`PowerPoint Presentation: ${file.name}`);
-                cleanChunks.push('Binary slide text extracted. For full visual slide graphics, save as .pptx or export to PDF.');
+            if (uniqueChunks.length === 0 && extractedImages.length === 0) {
+                uniqueChunks.push(`PowerPoint Presentation: ${file.name}`);
+                uniqueChunks.push('Presentation loaded. (Tip: For full vector graphics, save as .pptx or export to PDF).');
             }
 
-            // Group into logical slides (approx 3-6 text points per slide)
-            const chunkSize = Math.max(3, Math.min(6, Math.ceil(cleanChunks.length / 5)));
+            // Group into slides
+            const itemsPerSlide = Math.max(3, Math.min(6, Math.ceil(uniqueChunks.length / 4)));
             const slideGroups = [];
-            for (let i = 0; i < cleanChunks.length; i += chunkSize) {
-                slideGroups.push(cleanChunks.slice(i, i + chunkSize));
+            for (let i = 0; i < uniqueChunks.length; i += itemsPerSlide) {
+                slideGroups.push(uniqueChunks.slice(i, i + itemsPerSlide));
             }
+
+            if (slideGroups.length === 0) slideGroups.push([file.name]);
 
             const totalSlides = slideGroups.length;
             slideGroups.forEach((group, idx) => {
@@ -1250,18 +1361,28 @@ class WriteStudioEngine {
                 const title = group[0].length < 60 ? group[0] : `Slide ${slideNum}`;
                 const bullets = (group[0] === title ? group.slice(1) : group).map(t => ({ text: t, level: 0 }));
 
+                // Attach extracted diagrams to slides
+                const slideImages = [];
+                if (extractedImages.length > 0) {
+                    if (idx < extractedImages.length) {
+                        slideImages.push(extractedImages[idx]);
+                    } else if (idx === 0) {
+                        slideImages.push(...extractedImages);
+                    }
+                }
+
                 this.slides.push({
                     id: this.generateGuid(),
-                    name: `📊 Slide ${slideNum}/${totalSlides}: ${title.slice(0, 30)}`,
+                    name: `📊 Slide ${slideNum}/${totalSlides}: ${title.slice(0, 26)}`,
                     type: 'pptx',
                     presentationName: file.name,
                     slideNumber: slideNum,
                     totalSlidesInDeck: totalSlides,
                     title: title,
-                    bullets: bullets.length > 0 ? bullets : [{ text: 'Presentation slide content', level: 0 }],
+                    bullets: bullets.length > 0 ? bullets : [{ text: 'Slide content', level: 0 }],
                     tables: [],
-                    images: [],
-                    speakerNotes: 'Legacy .ppt binary presentation parsed. (Tip: Save as .pptx for native diagrams and embedded images).',
+                    images: slideImages,
+                    speakerNotes: 'Legacy .ppt binary presentation parsed.',
                     sizeBytes: file.size
                 });
             });
@@ -1483,8 +1604,10 @@ class WriteStudioEngine {
                         const notesBox = document.createElement('div');
                         notesBox.className = 'pptx-notes-box';
                         notesBox.innerHTML = `
-                            <div class="pptx-notes-label">🎙️ Presenter / Speaker Notes (Private):</div>
-                            <div>${item.speakerNotes}</div>
+                            <div class="pptx-notes-header">
+                                <div class="pptx-notes-label">🎙️ Presenter / Speaker Notes (Private)</div>
+                            </div>
+                            <div class="pptx-notes-content">${this.formatSpeakerNotesHtml(item.speakerNotes)}</div>
                         `;
                         pptxContainer.appendChild(notesBox);
                     }
@@ -2608,39 +2731,309 @@ class WriteStudioEngine {
         return card;
     }
 
+    formatSpeakerNotesHtml(notesText) {
+        if (!notesText || typeof notesText !== 'string') return '';
+        const trimmed = notesText.trim();
+        if (!trimmed) return '';
+
+        const escapeHtml = (str) => {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        };
+
+        const linkify = (text) => {
+            const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
+            return text.replace(urlRegex, (url) => {
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="pptx-note-link" title="Open reference link in new tab">🔗 ${url}</a>`;
+            });
+        };
+
+        let rawParagraphs = trimmed.split(/\r?\n+/).map(p => p.trim()).filter(p => p.length > 0);
+
+        // Fallback: If joined as a single long block, segment on Ref: URLs or sentence clusters
+        if (rawParagraphs.length === 1 && rawParagraphs[0].length > 80) {
+            let fullText = rawParagraphs[0];
+            const sections = [];
+            
+            const refMatch = fullText.match(/^Ref:\s*https?:\/\/[^\s]+/i);
+            if (refMatch) {
+                sections.push(refMatch[0]);
+                fullText = fullText.slice(refMatch[0].length).trim();
+            }
+
+            if (fullText) {
+                const sentenceMatches = fullText.match(/[^.!?]+[.!?]+(\s+|$)|[^.!?]+$/g);
+                if (sentenceMatches && sentenceMatches.length > 1) {
+                    let acc = '';
+                    sentenceMatches.forEach(st => {
+                        const s = st.trim();
+                        if (acc && (acc.length + s.length > 140)) {
+                            sections.push(acc);
+                            acc = s;
+                        } else {
+                            acc = acc ? `${acc} ${s}` : s;
+                        }
+                    });
+                    if (acc) sections.push(acc);
+                } else {
+                    sections.push(fullText);
+                }
+            }
+
+            if (sections.length > 1) {
+                rawParagraphs = sections;
+            }
+        }
+
+        return rawParagraphs.map(p => {
+            const escaped = escapeHtml(p);
+            const linked = linkify(escaped);
+            if (/^Ref:\s*/i.test(p)) {
+                return `<div class="pptx-note-ref-badge">${linked}</div>`;
+            }
+            return `<p class="pptx-note-paragraph">${linked}</p>`;
+        }).join('');
+    }
+
     openSlideFullscreenModal(item) {
         const modal = document.getElementById('slideFullscreenModal');
         const modalTitle = document.getElementById('slideModalTitle');
         const modalBody = document.getElementById('slideModalBody');
+        const dialog = document.getElementById('slideFullscreenDialog') || (modal ? modal.querySelector('.modal-dialog') : null);
+        const header = document.getElementById('slideModalHeader') || (dialog ? dialog.querySelector('.modal-header') : null);
+        const themeBtn = document.getElementById('btnToggleModalSlideTheme');
+        const btnPrev = document.getElementById('btnModalPrevSlide');
+        const btnNext = document.getElementById('btnModalNextSlide');
         if (!modal || !modalBody) return;
 
-        modalTitle.textContent = `📊 ${item.presentationName || 'PowerPoint'} — Slide ${item.slideNumber} of ${item.totalSlidesInDeck}`;
-        modalBody.innerHTML = '';
-
-        const card = this.createPptxSlideCardElement(item, true);
-        modalBody.appendChild(card);
-
-        if (item.speakerNotes && item.speakerNotes.trim().length > 0) {
-            const notesBox = document.createElement('div');
-            notesBox.className = 'pptx-notes-box';
-            notesBox.style.marginTop = '16px';
-            notesBox.innerHTML = `
-                <div class="pptx-notes-label">🎙️ Presenter / Speaker Notes (Private):</div>
-                <div style="font-size:14px; font-weight:500;">${item.speakerNotes}</div>
-            `;
-            modalBody.appendChild(notesBox);
+        if (dialog && header && !dialog.dataset.dragBound) {
+            dialog.dataset.dragBound = 'true';
+            header.classList.add('modal-header-draggable');
+            this.makeDialogDraggable(dialog, header);
         }
 
-        modal.style.display = 'flex';
+        modalTitle.textContent = item.type === 'pptx'
+            ? `📊 ${item.presentationName || 'PowerPoint'} — Slide ${item.slideNumber} of ${item.totalSlidesInDeck}`
+            : `📑 ${item.name} (High Definition)`;
+
+        modalBody.innerHTML = '';
+
+        if (item.type === 'pptx') {
+            if (themeBtn) themeBtn.style.display = 'inline-flex';
+            const card = this.createPptxSlideCardElement(item, true);
+            modalBody.appendChild(card);
+
+            if (item.speakerNotes && item.speakerNotes.trim().length > 0) {
+                const notesBox = document.createElement('div');
+                notesBox.className = 'pptx-notes-box';
+                notesBox.style.marginTop = '16px';
+                notesBox.style.width = '100%';
+                notesBox.innerHTML = `
+                    <div class="pptx-notes-header">
+                        <div class="pptx-notes-label">🎙️ Presenter / Speaker Notes (Private)</div>
+                    </div>
+                    <div class="pptx-notes-content">${this.formatSpeakerNotesHtml(item.speakerNotes)}</div>
+                `;
+                modalBody.appendChild(notesBox);
+            }
+        } else if (item.type === 'image') {
+            if (themeBtn) themeBtn.style.display = 'none';
+            const img = document.createElement('img');
+            img.src = item.url;
+            img.className = 'current-slide-img';
+            modalBody.appendChild(img);
+        } else if (item.type === 'pdf') {
+            if (themeBtn) themeBtn.style.display = 'none';
+            const iframe = document.createElement('iframe');
+            iframe.src = item.url;
+            iframe.className = 'current-slide-frame';
+            modalBody.appendChild(iframe);
+        } else if (item.type === 'text') {
+            if (themeBtn) themeBtn.style.display = 'none';
+            const pre = document.createElement('pre');
+            pre.className = 'current-slide-text';
+            pre.textContent = item.textContent || '';
+            modalBody.appendChild(pre);
+        } else {
+            if (themeBtn) themeBtn.style.display = 'none';
+            const card = document.createElement('div');
+            card.className = 'pptx-slide-card';
+            card.innerHTML = `
+                <div class="pptx-title">📁 ${item.name}</div>
+                <div style="font-size:14px; color:#94A3B8; margin:12px 0;">File size: ${(item.sizeBytes / 1024).toFixed(1)} KB</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                    <button id="btnModalParsePpt" class="btn btn-sm btn-primary">📊 Parse as PowerPoint</button>
+                    <button id="btnModalExtractText" class="btn btn-sm btn-secondary">📝 Extract Text</button>
+                    ${item.url ? `<a href="${item.url}" download="${item.name}" class="btn btn-sm btn-secondary">⬇ Download</a>` : ''}
+                </div>
+            `;
+            modalBody.appendChild(card);
+
+            const btnParse = card.querySelector('#btnModalParsePpt');
+            if (btnParse && item.rawFile) {
+                btnParse.addEventListener('click', async () => {
+                    btnParse.textContent = '⏳ Parsing Slides...';
+                    const file = item.rawFile;
+                    const idx = this.currentSlideIndex;
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    if (ext === 'ppt') await this.loadPptBinaryPresentation(file);
+                    else await this.loadPptxPresentation(file);
+                    this.removeSlide(idx);
+                    if (this.currentSlideIndex >= 0 && this.slides[this.currentSlideIndex]) {
+                        this.openSlideFullscreenModal(this.slides[this.currentSlideIndex]);
+                    } else {
+                        modal.style.display = 'none';
+                    }
+                });
+            }
+
+            const btnText = card.querySelector('#btnModalExtractText');
+            if (btnText && item.rawFile) {
+                btnText.addEventListener('click', async () => {
+                    btnText.textContent = '⏳ Extracting Text...';
+                    const file = item.rawFile;
+                    const idx = this.currentSlideIndex;
+                    await this.loadPptBinaryPresentation(file);
+                    this.removeSlide(idx);
+                    if (this.currentSlideIndex >= 0 && this.slides[this.currentSlideIndex]) {
+                        this.openSlideFullscreenModal(this.slides[this.currentSlideIndex]);
+                    } else {
+                        modal.style.display = 'none';
+                    }
+                });
+            }
+        }
+
+        // Update modal navigation button states
+        if (btnPrev) btnPrev.disabled = this.currentSlideIndex <= 0;
+        if (btnNext) btnNext.disabled = this.currentSlideIndex >= this.slides.length - 1;
+
+        modal.style.display = 'block';
+
+        if (dialog && !dialog.dataset.dragged) {
+            const dialogWidth = Math.min(920, Math.round(window.innerWidth * 0.96));
+            const left = Math.max(8, Math.round((window.innerWidth - dialogWidth) / 2));
+            const top = Math.max(16, Math.min(48, Math.round((window.innerHeight - 600) / 2)));
+            dialog.style.position = 'fixed';
+            dialog.style.left = `${left}px`;
+            dialog.style.top = `${top}px`;
+            dialog.style.right = 'auto';
+            dialog.style.bottom = 'auto';
+            dialog.style.margin = '0';
+            dialog.style.transform = 'none';
+        }
+    }
+
+    makeDialogDraggable(dialog, header) {
+        if (!dialog || !header) return;
+
+        let isDragging = false;
+        let startX = 0, startY = 0;
+        let initialLeft = 0, initialTop = 0;
+
+        const onDragMove = (e) => {
+            if (!isDragging) return;
+            if (e.cancelable) e.preventDefault();
+
+            const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : startX);
+            const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : startY);
+
+            const dx = clientX - startX;
+            const dy = clientY - startY;
+
+            let newLeft = initialLeft + dx;
+            let newTop = initialTop + dy;
+
+            const maxLeft = Math.max(0, window.innerWidth - 120);
+            const maxTop = Math.max(0, window.innerHeight - 50);
+            newLeft = Math.max(-dialog.offsetWidth + 120, Math.min(newLeft, maxLeft));
+            newTop = Math.max(0, Math.min(newTop, maxTop));
+
+            dialog.style.position = 'fixed';
+            dialog.style.left = `${newLeft}px`;
+            dialog.style.top = `${newTop}px`;
+            dialog.style.right = 'auto';
+            dialog.style.bottom = 'auto';
+            dialog.style.margin = '0';
+            dialog.style.transform = 'none';
+        };
+
+        const onDragEnd = (e) => {
+            if (isDragging) {
+                isDragging = false;
+                header.classList.remove('dragging');
+                document.body.style.userSelect = '';
+
+                window.removeEventListener('pointermove', onDragMove);
+                window.removeEventListener('pointerup', onDragEnd);
+                window.removeEventListener('pointercancel', onDragEnd);
+                window.removeEventListener('mousemove', onDragMove);
+                window.removeEventListener('mouseup', onDragEnd);
+                window.removeEventListener('touchmove', onDragMove);
+                window.removeEventListener('touchend', onDragEnd);
+            }
+        };
+
+        const onDragStart = (e) => {
+            // Do not drag when clicking on interactive controls
+            if (e.target.closest('button') || e.target.closest('.btn-close') || e.target.closest('select') || e.target.closest('input') || e.target.closest('a')) {
+                return;
+            }
+
+            isDragging = true;
+            startX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            startY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+            const rect = dialog.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+
+            dialog.style.position = 'fixed';
+            dialog.style.left = `${initialLeft}px`;
+            dialog.style.top = `${initialTop}px`;
+            dialog.style.right = 'auto';
+            dialog.style.bottom = 'auto';
+            dialog.style.margin = '0';
+            dialog.style.transform = 'none';
+            dialog.dataset.dragged = 'true';
+
+            header.classList.add('dragging');
+            document.body.style.userSelect = 'none';
+
+            window.addEventListener('pointermove', onDragMove, { passive: false });
+            window.addEventListener('pointerup', onDragEnd);
+            window.addEventListener('pointercancel', onDragEnd);
+            window.addEventListener('mousemove', onDragMove);
+            window.addEventListener('mouseup', onDragEnd);
+            window.addEventListener('touchmove', onDragMove, { passive: false });
+            window.addEventListener('touchend', onDragEnd);
+        };
+
+        header.addEventListener('pointerdown', onDragStart);
+        header.addEventListener('mousedown', onDragStart);
+        header.addEventListener('touchstart', onDragStart, { passive: true });
     }
 
     bindSlideModalEvents() {
         const modal = document.getElementById('slideFullscreenModal');
+        const dialog = document.getElementById('slideFullscreenDialog') || (modal ? modal.querySelector('.modal-dialog') : null);
+        const header = document.getElementById('slideModalHeader') || (dialog ? dialog.querySelector('.modal-header') : null);
         const btnClose = document.getElementById('btnCloseSlideModal');
         const btnCloseFooter = document.getElementById('btnCloseSlideModalFooter');
         const btnTheme = document.getElementById('btnToggleModalSlideTheme');
         const btnPrev = document.getElementById('btnModalPrevSlide');
         const btnNext = document.getElementById('btnModalNextSlide');
+        const btnOpenHd = document.getElementById('btnOpenHdSlideView');
+
+        if (dialog && header && !dialog.dataset.dragBound) {
+            dialog.dataset.dragBound = 'true';
+            header.classList.add('modal-header-draggable');
+            this.makeDialogDraggable(dialog, header);
+        }
 
         const closeModal = () => {
             if (modal) modal.style.display = 'none';
@@ -2651,6 +3044,14 @@ class WriteStudioEngine {
         if (modal) modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
         });
+
+        if (btnOpenHd) {
+            btnOpenHd.addEventListener('click', () => {
+                if (this.currentSlideIndex >= 0 && this.slides[this.currentSlideIndex]) {
+                    this.openSlideFullscreenModal(this.slides[this.currentSlideIndex]);
+                }
+            });
+        }
 
         if (btnTheme) {
             btnTheme.addEventListener('click', () => {

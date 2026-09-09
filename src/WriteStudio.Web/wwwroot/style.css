@@ -526,50 +526,199 @@ body {
 
 /* Presenter Notes Highlight Box */
 .pptx-notes-box {
+    margin-top: 14px;
+    padding: 12px 16px;
     background: #FFFBEB;
     border: 1px solid #FCD34D;
     border-left: 4px solid #F59E0B;
     border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 13px;
+    font-size: 13.5px;
     color: #78350F;
-    line-height: 1.5;
+    line-height: 1.6;
+    max-height: 240px;
+    overflow-y: auto;
+    word-break: break-word;
+    user-select: text;
+    -webkit-user-select: text;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .pptx-slide-card.theme-dark .pptx-notes-box {
-    background: rgba(30, 41, 59, 0.85);
-    border: 1px solid rgba(245, 197, 24, 0.5);
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid rgba(245, 197, 24, 0.4);
     border-left: 4px solid #F5C518;
     color: #FEF3C7;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.pptx-notes-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 .pptx-notes-label {
     font-weight: 800;
     font-size: 12px;
+    text-transform: uppercase;
     letter-spacing: 0.5px;
     color: #B45309;
-    margin-bottom: 4px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
 }
 
 .pptx-slide-card.theme-dark .pptx-notes-label {
     color: #F5C518;
+    border-color: rgba(245, 197, 24, 0.3);
 }
 
-/* Fullscreen Slide Modal */
+.pptx-notes-content {
+    font-size: 13.5px;
+    line-height: 1.6;
+}
+
+.pptx-note-paragraph {
+    margin: 0 0 8px 0;
+    line-height: 1.6;
+}
+
+.pptx-note-paragraph:last-child {
+    margin-bottom: 0;
+}
+
+.pptx-note-ref-badge {
+    display: block;
+    background: rgba(245, 158, 11, 0.15);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.pptx-slide-card.theme-dark .pptx-note-ref-badge {
+    background: rgba(217, 119, 6, 0.25);
+}
+
+.pptx-note-link {
+    color: #2563EB;
+    text-decoration: underline;
+    word-break: break-all;
+    font-weight: 600;
+}
+
+.pptx-slide-card.theme-dark .pptx-note-link {
+    color: #93C5FD;
+}
+
+.pptx-note-link:hover {
+    text-decoration: none;
+}
+
+/* Draggable & Floating High-Definition Slide Modal */
+.modal-backdrop-floating {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+    display: block !important;
+    overflow: hidden;
+}
+
 .modal-slide-fullscreen {
-    max-width: 90vw;
-    width: 1000px;
+    position: fixed;
+    top: 40px;
+    left: calc(50% - 460px);
+    width: 920px;
+    max-width: 96vw;
     max-height: 90vh;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 0 1px #334155;
+    border-radius: 12px;
+    background-color: #0F172A;
+    display: flex;
+    flex-direction: column;
+    z-index: 1001;
+    overflow: hidden;
+}
+
+@media (max-width: 992px) {
+    .modal-slide-fullscreen {
+        top: 20px;
+        left: 2vw;
+        width: 96vw;
+        max-height: 94vh;
+    }
+}
+
+.modal-slide-fullscreen .modal-header,
+.modal-header-draggable {
+    cursor: move;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none !important;
+    background: #1E293B;
+    border-bottom: 1px solid #334155;
+}
+
+.modal-slide-fullscreen .modal-header *,
+.modal-header-draggable * {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.modal-slide-fullscreen .modal-header.dragging,
+.modal-header-draggable.dragging {
+    cursor: grabbing;
+}
+
+.drag-handle-icon {
+    font-size: 16px;
+    color: #38BDF8;
+    cursor: grab;
+    padding-right: 4px;
+    user-select: none;
 }
 
 .slide-fullscreen-body {
     padding: 16px;
     overflow-y: auto;
+    flex: 1;
     max-height: 72vh;
     background: #090D14;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.slide-fullscreen-body .pptx-slide-card {
+    width: 100%;
+}
+
+.slide-fullscreen-body .current-slide-img {
+    max-height: 70vh;
+    max-width: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.slide-fullscreen-body .current-slide-frame {
+    width: 100%;
+    height: 68vh;
+    border-radius: 8px;
+}
+
+.slide-fullscreen-body .current-slide-text {
+    width: 100%;
+    min-height: 40vh;
+    max-height: 68vh;
+    border-radius: 8px;
+    font-size: 14px;
 }
 
 .slide-tabs-bar {
