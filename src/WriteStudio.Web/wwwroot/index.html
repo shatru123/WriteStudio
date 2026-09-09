@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WriteStudio — .NET Teaching & Lecture Studio</title>
-    <link rel="stylesheet" href="style.css?v=2.7">
+    <link rel="stylesheet" href="style.css?v=2.8">
 </head>
 <body>
     <!-- Header -->
@@ -435,8 +435,8 @@
         </div>
     </div>
 
-    <!-- 📊 Draggable / Movable Fullscreen / HD Slide Modal -->
-    <div id="slideFullscreenModal" class="modal-backdrop modal-backdrop-floating" style="display:none">
+    <!-- 📊 Draggable / Movable Fullscreen / HD Slide Modal (Non-Blocking) -->
+    <div id="slideFullscreenModal" class="modal-backdrop-floating" style="display:none">
         <div class="modal-dialog modal-slide-fullscreen" id="slideFullscreenDialog">
             <div class="modal-header modal-header-draggable" id="slideModalHeader" title="Click and drag to move this window anywhere">
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -445,7 +445,7 @@
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
                     <button id="btnToggleModalSlideTheme" class="btn btn-sm btn-secondary" title="Toggle Light/Dark Slide Theme">☀️ / 🌙</button>
-                    <button id="btnCloseSlideModal" class="btn-close">&times;</button>
+                    <button id="btnCloseSlideModal" class="btn-close" title="Close HD Window">&times;</button>
                 </div>
             </div>
             <div class="modal-body slide-fullscreen-body" id="slideModalBody">
@@ -461,7 +461,7 @@
         </div>
     </div>
 
-    <script src="jszip.min.js?v=2.7"></script>
-    <script src="studio.js?v=2.7"></script>
+    <script src="jszip.min.js?v=2.8"></script>
+    <script src="studio.js?v=2.8"></script>
 </body>
 </html>
