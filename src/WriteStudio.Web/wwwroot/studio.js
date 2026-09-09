@@ -940,6 +940,7 @@ class WriteStudioEngine {
                     type: fileType,
                     url: contentUrl,
                     textContent: null,
+                    rawFile: file,
                     sizeBytes: file.size
                 });
             } else if (file.type === 'application/pdf' || ext === 'pdf') {
@@ -951,6 +952,7 @@ class WriteStudioEngine {
                     type: fileType,
                     url: contentUrl,
                     textContent: null,
+                    rawFile: file,
                     sizeBytes: file.size
                 });
             } else if (['pptx', 'ppsx', 'pptm', 'potx', 'odp'].includes(ext)) {
@@ -973,6 +975,7 @@ class WriteStudioEngine {
                     type: fileType,
                     url: null,
                     textContent: textContent,
+                    rawFile: file,
                     sizeBytes: file.size
                 });
             } else {
@@ -984,6 +987,7 @@ class WriteStudioEngine {
                     type: fileType,
                     url: contentUrl,
                     textContent: null,
+                    rawFile: file,
                     sizeBytes: file.size
                 });
             }
@@ -1173,43 +1177,107 @@ class WriteStudioEngine {
         try {
             const buffer = await file.arrayBuffer();
             const bytes = new Uint8Array(buffer);
-            let textChunks = [];
-            let current = '';
+            const textChunks = [];
 
-            // Extract ASCII & UTF-16 strings
-            for (let i = 0; i < bytes.length; i++) {
-                const b = bytes[i];
-                if (b >= 32 && b <= 126) {
-                    current += String.fromCharCode(b);
-                } else if (b === 10 || b === 13) {
-                    if (current.trim().length > 3) textChunks.push(current.trim());
-                    current = '';
+            // 1. Extract UTF-16LE Unicode Strings (Standard PPT text encoding)
+            let current16 = '';
+            for (let i = 0; i < bytes.length - 1; i += 2) {
+                const code = bytes[i] | (bytes[i + 1] << 8);
+                if ((code >= 32 && code <= 126) || code === 10 || code === 13 || (code >= 160 && code <= 65533)) {
+                    current16 += String.fromCharCode(code);
                 } else {
-                    if (current.trim().length > 3) textChunks.push(current.trim());
-                    current = '';
+                    if (current16.trim().length >= 3) {
+                        textChunks.push(current16.trim());
+                    }
+                    current16 = '';
                 }
             }
-            if (current.trim().length > 3) textChunks.push(current.trim());
+            if (current16.trim().length >= 3) textChunks.push(current16.trim());
 
-            // Deduplicate and filter noise
-            const filtered = textChunks.filter(t => !/^[^\w\s]+$/.test(t) && t.length > 3).slice(0, 50);
+            // 2. Extract 1-byte ASCII Strings
+            let currentAscii = '';
+            for (let i = 0; i < bytes.length; i++) {
+                const b = bytes[i];
+                if ((b >= 32 && b <= 126) || b === 10 || b === 13) {
+                    currentAscii += String.fromCharCode(b);
+                } else {
+                    if (currentAscii.trim().length >= 3) {
+                        textChunks.push(currentAscii.trim());
+                    }
+                    currentAscii = '';
+                }
+            }
+            if (currentAscii.trim().length >= 3) textChunks.push(currentAscii.trim());
 
+            // Filter out binary metadata noise and font tables
+            const ignoreList = [
+                'PowerPoint Document', 'Current User', 'SummaryInformation', 'DocumentSummaryInformation',
+                'Default Design', 'Arial', 'Calibri', 'Times New Roman', 'Wingdings', 'Tahoma',
+                'Header', 'Footer', 'Slide Master', 'Title Master'
+            ];
+
+            const cleanChunks = [];
+            const seen = new Set();
+            for (const chunk of textChunks) {
+                const trimmed = chunk.trim();
+                if (trimmed.length < 3) continue;
+                if (ignoreList.includes(trimmed)) continue;
+                if (/^[^\w\s]+$/.test(trimmed)) continue;
+                if (!seen.has(trimmed)) {
+                    seen.add(trimmed);
+                    cleanChunks.push(trimmed);
+                }
+            }
+
+            if (cleanChunks.length === 0) {
+                cleanChunks.push(`PowerPoint Presentation: ${file.name}`);
+                cleanChunks.push('Binary slide text extracted. For full visual slide graphics, save as .pptx or export to PDF.');
+            }
+
+            // Group into logical slides (approx 3-6 text points per slide)
+            const chunkSize = Math.max(3, Math.min(6, Math.ceil(cleanChunks.length / 5)));
+            const slideGroups = [];
+            for (let i = 0; i < cleanChunks.length; i += chunkSize) {
+                slideGroups.push(cleanChunks.slice(i, i + chunkSize));
+            }
+
+            const totalSlides = slideGroups.length;
+            slideGroups.forEach((group, idx) => {
+                const slideNum = idx + 1;
+                const title = group[0].length < 60 ? group[0] : `Slide ${slideNum}`;
+                const bullets = (group[0] === title ? group.slice(1) : group).map(t => ({ text: t, level: 0 }));
+
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: `📊 Slide ${slideNum}/${totalSlides}: ${title.slice(0, 30)}`,
+                    type: 'pptx',
+                    presentationName: file.name,
+                    slideNumber: slideNum,
+                    totalSlidesInDeck: totalSlides,
+                    title: title,
+                    bullets: bullets.length > 0 ? bullets : [{ text: 'Presentation slide content', level: 0 }],
+                    tables: [],
+                    images: [],
+                    speakerNotes: 'Legacy .ppt binary presentation parsed. (Tip: Save as .pptx for native diagrams and embedded images).',
+                    sizeBytes: file.size
+                });
+            });
+        } catch (err) {
+            console.error('Failed to parse PPT:', err);
             this.slides.push({
                 id: this.generateGuid(),
-                name: `📊 ${file.name} (Binary PPT)`,
+                name: `📊 ${file.name}`,
                 type: 'pptx',
                 presentationName: file.name,
                 slideNumber: 1,
                 totalSlidesInDeck: 1,
                 title: file.name,
-                bullets: filtered.map(t => ({ text: t, level: 0 })),
+                bullets: [{ text: `Error reading PPT: ${err.message}. You can export slides to PDF or images.`, level: 0 }],
                 tables: [],
                 images: [],
-                speakerNotes: 'Note: Older binary .ppt format text extracted. For full slide graphics, save as modern .pptx or export to PDF.',
+                speakerNotes: '',
                 sizeBytes: file.size
             });
-        } catch (err) {
-            console.error('Failed to parse PPT:', err);
         }
     }
 
@@ -1406,8 +1474,50 @@ class WriteStudioEngine {
                     pptxContainer.style.display = 'flex';
                 }
             } else {
-                textPre.textContent = `📁 File: ${item.name}\nSize: ${(item.sizeBytes / 1024).toFixed(1)} KB\n\nPreview not directly renderable. Click load to view.`;
-                textPre.style.display = 'block';
+                if (pptxContainer) {
+                    pptxContainer.innerHTML = '';
+                    const card = document.createElement('div');
+                    card.className = 'pptx-slide-card';
+                    card.innerHTML = `
+                        <div class="pptx-title">📁 ${item.name}</div>
+                        <div style="font-size:12px; color:#94A3B8; margin-bottom:8px;">File size: ${(item.sizeBytes / 1024).toFixed(1)} KB</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <button id="btnParseAsPptx" class="btn btn-sm btn-primary">📊 Parse as PowerPoint / Presentation</button>
+                            <button id="btnViewExtractedText" class="btn btn-sm btn-secondary">📝 Extract & View Text</button>
+                            ${item.url ? `<a href="${item.url}" download="${item.name}" class="btn btn-sm btn-secondary">⬇ Download</a>` : ''}
+                        </div>
+                    `;
+                    pptxContainer.appendChild(card);
+
+                    const btnParse = card.querySelector('#btnParseAsPptx');
+                    if (btnParse && item.rawFile) {
+                        btnParse.addEventListener('click', async () => {
+                            btnParse.textContent = '⏳ Parsing Slides...';
+                            const file = item.rawFile;
+                            const idx = this.currentSlideIndex;
+                            const ext = file.name.split('.').pop().toLowerCase();
+                            if (ext === 'ppt') await this.loadPptBinaryPresentation(file);
+                            else await this.loadPptxPresentation(file);
+                            this.removeSlide(idx);
+                        });
+                    }
+
+                    const btnText = card.querySelector('#btnViewExtractedText');
+                    if (btnText && item.rawFile) {
+                        btnText.addEventListener('click', async () => {
+                            btnText.textContent = '⏳ Extracting Text...';
+                            const file = item.rawFile;
+                            const idx = this.currentSlideIndex;
+                            await this.loadPptBinaryPresentation(file);
+                            this.removeSlide(idx);
+                        });
+                    }
+
+                    pptxContainer.style.display = 'flex';
+                } else {
+                    textPre.textContent = `📁 File: ${item.name}\nSize: ${(item.sizeBytes / 1024).toFixed(1)} KB`;
+                    textPre.style.display = 'block';
+                }
             }
         } else {
             img.style.display = 'none';
