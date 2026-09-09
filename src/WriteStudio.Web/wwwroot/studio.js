@@ -3041,8 +3041,15 @@ class WriteStudioEngine {
 
         if (btnClose) btnClose.addEventListener('click', closeModal);
         if (btnCloseFooter) btnCloseFooter.addEventListener('click', closeModal);
-        if (modal) modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+        }
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal && modal.style.display !== 'none') {
+                closeModal();
+            }
         });
 
         if (btnOpenHd) {
