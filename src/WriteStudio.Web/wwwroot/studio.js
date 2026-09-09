@@ -934,9 +934,31 @@ class WriteStudioEngine {
             if (file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext)) {
                 fileType = 'image';
                 contentUrl = URL.createObjectURL(file);
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: file.name,
+                    type: fileType,
+                    url: contentUrl,
+                    textContent: null,
+                    sizeBytes: file.size
+                });
             } else if (file.type === 'application/pdf' || ext === 'pdf') {
                 fileType = 'pdf';
                 contentUrl = URL.createObjectURL(file);
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: file.name,
+                    type: fileType,
+                    url: contentUrl,
+                    textContent: null,
+                    sizeBytes: file.size
+                });
+            } else if (['pptx', 'ppsx', 'pptm', 'potx', 'odp'].includes(ext)) {
+                // PowerPoint Presentation (OpenXML / JSZip)
+                await this.loadPptxPresentation(file);
+            } else if (ext === 'ppt') {
+                // Legacy PowerPoint Binary
+                await this.loadPptBinaryPresentation(file);
             } else if (file.type.startsWith('text/') || ['txt', 'md', 'cs', 'js', 'ts', 'py', 'json', 'html', 'css', 'cpp', 'c', 'h', 'java', 'sql', 'sh', 'xml', 'yaml', 'yml', 'rs', 'go'].includes(ext)) {
                 fileType = 'text';
                 textContent = await new Promise((resolve) => {
@@ -945,19 +967,26 @@ class WriteStudioEngine {
                     reader.onerror = () => resolve('Error reading file content');
                     reader.readAsText(file);
                 });
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: file.name,
+                    type: fileType,
+                    url: null,
+                    textContent: textContent,
+                    sizeBytes: file.size
+                });
             } else {
                 fileType = 'other';
                 contentUrl = URL.createObjectURL(file);
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: file.name,
+                    type: fileType,
+                    url: contentUrl,
+                    textContent: null,
+                    sizeBytes: file.size
+                });
             }
-
-            this.slides.push({
-                id: this.generateGuid(),
-                name: file.name,
-                type: fileType,
-                url: contentUrl,
-                textContent: textContent,
-                sizeBytes: file.size
-            });
         }
 
         if (this.currentSlideIndex < 0 || this.currentSlideIndex >= this.slides.length) {
@@ -967,10 +996,230 @@ class WriteStudioEngine {
         this.updateSlideView();
     }
 
+    // ==========================================
+    // 📊 PowerPoint (.pptx & .ppt) Presentation Parser
+    // ==========================================
+    async loadPptxPresentation(file) {
+        try {
+            if (typeof JSZip === 'undefined') {
+                console.warn('JSZip not yet available, waiting...');
+                await new Promise(r => setTimeout(r, 200));
+            }
+
+            const zip = await JSZip.loadAsync(await file.arrayBuffer());
+            const parser = new DOMParser();
+
+            // Find all slides in order
+            const slideFiles = Object.keys(zip.files)
+                .filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+                .sort((a, b) => {
+                    const numA = parseInt(a.match(/\d+/)[0], 10);
+                    const numB = parseInt(b.match(/\d+/)[0], 10);
+                    return numA - numB;
+                });
+
+            if (slideFiles.length === 0) {
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: file.name,
+                    type: 'pptx',
+                    presentationName: file.name,
+                    slideNumber: 1,
+                    totalSlidesInDeck: 1,
+                    title: file.name,
+                    bullets: [{ text: 'Presentation loaded (No slide XML found)', level: 0 }],
+                    tables: [],
+                    images: [],
+                    speakerNotes: '',
+                    sizeBytes: file.size
+                });
+                return;
+            }
+
+            const totalSlides = slideFiles.length;
+
+            for (let i = 0; i < totalSlides; i++) {
+                const slideFileName = slideFiles[i];
+                const slideNum = i + 1;
+                const slideXmlStr = await zip.file(slideFileName).async('string');
+                const slideDoc = parser.parseFromString(slideXmlStr, 'application/xml');
+
+                // Extract Slide Images from relationships
+                const relsFileName = `ppt/slides/_rels/${slideFileName.split('/').pop()}.rels`;
+                const slideImages = [];
+                if (zip.file(relsFileName)) {
+                    const relsXml = await zip.file(relsFileName).async('string');
+                    const relsDoc = parser.parseFromString(relsXml, 'application/xml');
+                    const relNodes = relsDoc.getElementsByTagName('Relationship');
+                    for (let r = 0; r < relNodes.length; r++) {
+                        const target = relNodes[r].getAttribute('Target') || '';
+                        if (target.includes('media/')) {
+                            const mediaPath = 'ppt/' + target.replace('../', '');
+                            const imgFile = zip.file(mediaPath);
+                            if (imgFile) {
+                                const blob = await imgFile.async('blob');
+                                const imgUrl = URL.createObjectURL(blob);
+                                slideImages.push({ url: imgUrl, name: target.split('/').pop() });
+                            }
+                        }
+                    }
+                }
+
+                // Extract Speaker Notes if present
+                let speakerNotes = '';
+                const notesFileName = `ppt/notesSlides/notesSlide${slideNum}.xml`;
+                if (zip.file(notesFileName)) {
+                    const notesXml = await zip.file(notesFileName).async('string');
+                    const notesDoc = parser.parseFromString(notesXml, 'application/xml');
+                    const textNodes = notesDoc.getElementsByTagName('a:t');
+                    const notesArr = [];
+                    for (let t = 0; t < textNodes.length; t++) {
+                        const txt = textNodes[t].textContent.trim();
+                        if (txt && !/^\d+$/.test(txt)) notesArr.push(txt);
+                    }
+                    speakerNotes = notesArr.join(' ');
+                }
+
+                // Extract Slide Title
+                let slideTitle = '';
+                const shapes = slideDoc.getElementsByTagName('p:sp');
+                const bullets = [];
+                const tables = [];
+
+                for (let s = 0; s < shapes.length; s++) {
+                    const shape = shapes[s];
+                    const ph = shape.getElementsByTagName('p:ph')[0];
+                    const phType = ph ? ph.getAttribute('type') : null;
+                    const paragraphs = shape.getElementsByTagName('a:p');
+
+                    for (let p = 0; p < paragraphs.length; p++) {
+                        const para = paragraphs[p];
+                        const textRuns = para.getElementsByTagName('a:t');
+                        let paraText = '';
+                        for (let t = 0; t < textRuns.length; t++) {
+                            paraText += textRuns[t].textContent;
+                        }
+                        paraText = paraText.trim();
+                        if (!paraText) continue;
+
+                        const pPr = para.getElementsByTagName('a:pPr')[0];
+                        const lvl = pPr && pPr.getAttribute('lvl') ? parseInt(pPr.getAttribute('lvl'), 10) : 0;
+
+                        if ((phType === 'title' || phType === 'ctrTitle') && !slideTitle) {
+                            slideTitle = paraText;
+                        } else if (s === 0 && p === 0 && !slideTitle && !ph) {
+                            slideTitle = paraText;
+                        } else {
+                            bullets.push({ text: paraText, level: lvl });
+                        }
+                    }
+                }
+
+                // Extract Tables
+                const tblNodes = slideDoc.getElementsByTagName('a:tbl');
+                for (let t = 0; t < tblNodes.length; t++) {
+                    const tbl = tblNodes[t];
+                    const rows = tbl.getElementsByTagName('a:tr');
+                    const tableData = [];
+                    for (let r = 0; r < rows.length; r++) {
+                        const cells = rows[r].getElementsByTagName('a:tc');
+                        const rowData = [];
+                        for (let c = 0; c < cells.length; c++) {
+                            const cellTexts = cells[c].getElementsByTagName('a:t');
+                            let cText = '';
+                            for (let ct = 0; ct < cellTexts.length; ct++) cText += cellTexts[ct].textContent;
+                            rowData.push(cText.trim());
+                        }
+                        tableData.push(rowData);
+                    }
+                    if (tableData.length > 0) tables.push(tableData);
+                }
+
+                this.slides.push({
+                    id: this.generateGuid(),
+                    name: `📊 Slide ${slideNum}/${totalSlides}${slideTitle ? ': ' + slideTitle : ''}`,
+                    type: 'pptx',
+                    presentationName: file.name,
+                    slideNumber: slideNum,
+                    totalSlidesInDeck: totalSlides,
+                    title: slideTitle || `Slide ${slideNum}`,
+                    bullets: bullets,
+                    tables: tables,
+                    images: slideImages,
+                    speakerNotes: speakerNotes,
+                    sizeBytes: file.size
+                });
+            }
+        } catch (err) {
+            console.error('Failed to parse PPTX:', err);
+            this.slides.push({
+                id: this.generateGuid(),
+                name: file.name,
+                type: 'pptx',
+                presentationName: file.name,
+                slideNumber: 1,
+                totalSlidesInDeck: 1,
+                title: file.name,
+                bullets: [{ text: `Error reading PPTX: ${err.message}. You can also export slides to PDF or images for visual preview.`, level: 0 }],
+                tables: [],
+                images: [],
+                speakerNotes: '',
+                sizeBytes: file.size
+            });
+        }
+    }
+
+    async loadPptBinaryPresentation(file) {
+        try {
+            const buffer = await file.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            let textChunks = [];
+            let current = '';
+
+            // Extract ASCII & UTF-16 strings
+            for (let i = 0; i < bytes.length; i++) {
+                const b = bytes[i];
+                if (b >= 32 && b <= 126) {
+                    current += String.fromCharCode(b);
+                } else if (b === 10 || b === 13) {
+                    if (current.trim().length > 3) textChunks.push(current.trim());
+                    current = '';
+                } else {
+                    if (current.trim().length > 3) textChunks.push(current.trim());
+                    current = '';
+                }
+            }
+            if (current.trim().length > 3) textChunks.push(current.trim());
+
+            // Deduplicate and filter noise
+            const filtered = textChunks.filter(t => !/^[^\w\s]+$/.test(t) && t.length > 3).slice(0, 50);
+
+            this.slides.push({
+                id: this.generateGuid(),
+                name: `📊 ${file.name} (Binary PPT)`,
+                type: 'pptx',
+                presentationName: file.name,
+                slideNumber: 1,
+                totalSlidesInDeck: 1,
+                title: file.name,
+                bullets: filtered.map(t => ({ text: t, level: 0 })),
+                tables: [],
+                images: [],
+                speakerNotes: 'Note: Older binary .ppt format text extracted. For full slide graphics, save as modern .pptx or export to PDF.',
+                sizeBytes: file.size
+            });
+        } catch (err) {
+            console.error('Failed to parse PPT:', err);
+        }
+    }
+
     removeSlide(index) {
         if (index >= 0 && index < this.slides.length) {
             const item = this.slides[index];
             if (item.url) URL.revokeObjectURL(item.url);
+            if (item.images && Array.isArray(item.images)) {
+                item.images.forEach(img => { if (img.url) URL.revokeObjectURL(img.url); });
+            }
             this.slides.splice(index, 1);
             if (this.currentSlideIndex >= this.slides.length) {
                 this.currentSlideIndex = this.slides.length - 1;
@@ -982,6 +1231,9 @@ class WriteStudioEngine {
     clearAllSlides() {
         this.slides.forEach(s => {
             if (s.url) URL.revokeObjectURL(s.url);
+            if (s.images && Array.isArray(s.images)) {
+                s.images.forEach(img => { if (img.url) URL.revokeObjectURL(img.url); });
+            }
         });
         this.slides = [];
         this.currentSlideIndex = -1;
@@ -1005,7 +1257,12 @@ class WriteStudioEngine {
             const pill = document.createElement('div');
             pill.className = `slide-tab-pill ${idx === this.currentSlideIndex ? 'active' : ''}`;
             
-            const icon = item.type === 'image' ? '🖼' : (item.type === 'pdf' ? '📄' : (item.type === 'text' ? '📝' : '📁'));
+            let icon = '📁';
+            if (item.type === 'image') icon = '🖼';
+            else if (item.type === 'pdf') icon = '📄';
+            else if (item.type === 'pptx') icon = '📊';
+            else if (item.type === 'text') icon = '📝';
+
             pill.innerHTML = `
                 <span>${icon} ${item.name}</span>
                 <span class="slide-tab-remove" title="Remove file">&times;</span>
@@ -1029,6 +1286,7 @@ class WriteStudioEngine {
         const img = document.getElementById('currentSlideImg');
         const pdfFrame = document.getElementById('currentSlidePdf');
         const textPre = document.getElementById('currentSlideText');
+        const pptxContainer = document.getElementById('currentSlidePptx');
         const placeholder = document.getElementById('slidePlaceholder');
         const navBar = document.getElementById('slideNavBar');
         const counter = document.getElementById('slideCounter');
@@ -1045,12 +1303,13 @@ class WriteStudioEngine {
             if (btnClear) btnClear.style.display = 'inline-flex';
 
             counter.textContent = `${this.currentSlideIndex + 1} / ${this.slides.length}`;
-            if (fileName) fileName.textContent = item.name;
+            if (fileName) fileName.textContent = item.presentationName || item.name;
 
             // Reset all view elements
             img.style.display = 'none';
             pdfFrame.style.display = 'none';
             textPre.style.display = 'none';
+            if (pptxContainer) pptxContainer.style.display = 'none';
 
             if (item.type === 'image') {
                 img.src = item.url;
@@ -1061,6 +1320,91 @@ class WriteStudioEngine {
             } else if (item.type === 'text') {
                 textPre.textContent = item.textContent || '';
                 textPre.style.display = 'block';
+            } else if (item.type === 'pptx') {
+                if (pptxContainer) {
+                    pptxContainer.innerHTML = '';
+
+                    // Header Badge
+                    const header = document.createElement('div');
+                    header.className = 'pptx-slide-header';
+                    header.innerHTML = `
+                        <div class="pptx-deck-badge">📊 ${item.presentationName || 'PowerPoint'}</div>
+                        <div style="font-size:11px; color:#94A3B8; font-weight:600;">Slide ${item.slideNumber} of ${item.totalSlidesInDeck}</div>
+                    `;
+                    pptxContainer.appendChild(header);
+
+                    // Slide Card
+                    const card = document.createElement('div');
+                    card.className = 'pptx-slide-card';
+
+                    if (item.title) {
+                        const titleEl = document.createElement('div');
+                        titleEl.className = 'pptx-title';
+                        titleEl.textContent = item.title;
+                        card.appendChild(titleEl);
+                    }
+
+                    if (item.bullets && item.bullets.length > 0) {
+                        const ul = document.createElement('ul');
+                        ul.className = 'pptx-bullets';
+                        item.bullets.forEach(b => {
+                            const li = document.createElement('li');
+                            li.className = `pptx-bullet-item pptx-bullet-lvl-${Math.min(b.level, 2)}`;
+                            li.textContent = b.text;
+                            ul.appendChild(li);
+                        });
+                        card.appendChild(ul);
+                    }
+
+                    // Tables
+                    if (item.tables && item.tables.length > 0) {
+                        item.tables.forEach(tbl => {
+                            const tableEl = document.createElement('table');
+                            tableEl.className = 'pptx-table';
+                            tbl.forEach((row, rIdx) => {
+                                const tr = document.createElement('tr');
+                                row.forEach(cell => {
+                                    const cellEl = document.createElement(rIdx === 0 ? 'th' : 'td');
+                                    cellEl.textContent = cell;
+                                    tr.appendChild(cellEl);
+                                });
+                                tableEl.appendChild(tr);
+                            });
+                            card.appendChild(tableEl);
+                        });
+                    }
+
+                    // Embedded Images / Diagrams
+                    if (item.images && item.images.length > 0) {
+                        const imgGrid = document.createElement('div');
+                        imgGrid.className = 'pptx-images-grid';
+                        item.images.forEach(imgData => {
+                            const imgEl = document.createElement('img');
+                            imgEl.className = 'pptx-image-item';
+                            imgEl.src = imgData.url;
+                            imgEl.alt = imgData.name;
+                            imgEl.title = 'Click to open full size diagram';
+                            imgEl.addEventListener('click', () => window.open(imgData.url, '_blank'));
+                            imgGrid.appendChild(imgEl);
+                        });
+                        card.appendChild(imgGrid);
+                    }
+
+                    pptxContainer.appendChild(card);
+
+                    // Speaker Notes Box (Private)
+                    if (item.speakerNotes && item.speakerNotes.trim().length > 0) {
+                        const notesBox = document.createElement('div');
+                        notesBox.className = 'pptx-notes-box';
+                        notesBox.innerHTML = `
+                            <div class="pptx-notes-label">🎙️ Presenter / Speaker Notes (Private):</div>
+                            <div>${item.speakerNotes}</div>
+                        `;
+                        pptxContainer.appendChild(notesBox);
+                    }
+
+                    pptxContainer.style.display = 'flex';
+                }
             } else {
                 textPre.textContent = `📁 File: ${item.name}\nSize: ${(item.sizeBytes / 1024).toFixed(1)} KB\n\nPreview not directly renderable. Click load to view.`;
                 textPre.style.display = 'block';
@@ -1069,6 +1413,7 @@ class WriteStudioEngine {
             img.style.display = 'none';
             pdfFrame.style.display = 'none';
             textPre.style.display = 'none';
+            if (pptxContainer) pptxContainer.style.display = 'none';
             placeholder.style.display = 'block';
             navBar.style.display = 'none';
             if (btnClear) btnClear.style.display = 'none';

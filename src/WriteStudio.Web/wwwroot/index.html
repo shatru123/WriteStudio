@@ -72,11 +72,12 @@
                 <div id="slidePlaceholder" class="slide-placeholder">
                     <div class="placeholder-icon">📑</div>
                     <div class="placeholder-text">No reference material loaded</div>
-                    <div class="placeholder-hint">Upload any images, PDFs, text, code, or notes to reference privately while teaching.</div>
+                    <div class="placeholder-hint">Upload PowerPoint slides (.pptx, .ppt), PDFs, images, code, or notes to reference privately while teaching.</div>
                 </div>
                 <img id="currentSlideImg" class="current-slide-img" style="display:none" alt="Presenter Reference Material">
                 <iframe id="currentSlidePdf" class="current-slide-frame" style="display:none"></iframe>
                 <pre id="currentSlideText" class="current-slide-text" style="display:none"></pre>
+                <div id="currentSlidePptx" class="current-slide-pptx" style="display:none"></div>
             </div>
 
             <!-- Slide Navigation & Item Management Bar -->
@@ -433,6 +434,7 @@
         </div>
     </div>
 
+    <script src="jszip.min.js"></script>
     <script src="studio.js"></script>
 </body>
 </html>
