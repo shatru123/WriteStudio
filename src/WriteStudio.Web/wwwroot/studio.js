@@ -112,7 +112,7 @@ class WriteStudioEngine {
         this.activeBackground = 'Blackboard';
         this.currentPageIndex = 0;
         this.pages = [
-            { index: 0, title: 'Page 1', background: 'Blackboard', strokes: [] }
+            { index: 0, title: 'Page 1', background: 'Blackboard', question: null, strokes: [] }
         ];
         this.undoStack = [];
         this.redoStack = [];
@@ -173,6 +173,7 @@ class WriteStudioEngine {
 
         this.bindCanvasEvents();
         this.bindToolEvents();
+        this.bindQuestionEvents();
         this.bindSlideEvents();
         this.bindSlideModalEvents();
         this.bindMediaEvents();
@@ -196,6 +197,7 @@ class WriteStudioEngine {
         this.cssWidth = rect.width;
         this.cssHeight = rect.height;
         this.renderCanvas();
+        this.syncQuestionOverlay();
     }
 
     get currentPage() {
@@ -481,9 +483,14 @@ class WriteStudioEngine {
         // 1. Background
         this.drawBackground(this.currentPage.background);
 
-        // 2. Render Page Strokes
         this.ctx.scale(scaleX, scaleY);
 
+        // 2. Render MCQ / Question Card (if page contains a question)
+        if (this.currentPage.question && this.currentPage.question.questionText) {
+            this.drawQuestionCard(this.currentPage.question, this.currentPage.background);
+        }
+
+        // 3. Render Page Strokes (strokes and drawings appear on top/around the question card)
         for (const stroke of this.currentPage.strokes) {
             this.drawStroke(stroke);
         }
@@ -494,10 +501,229 @@ class WriteStudioEngine {
 
         this.ctx.restore();
 
-        // 3. Render Live Moving Presenter Webcam PiP Layer directly onto canvas
+        // 4. Render Live Moving Presenter Webcam PiP Layer directly onto canvas
         const webcamVideo = document.getElementById('webcamVideo');
         if (this.cameraStream && webcamVideo && webcamVideo.readyState >= 2 && this.cameraLayout.isVisible && this.cameraLayout.preset !== 'Hidden') {
             this.drawWebcamPip(webcamVideo);
+        }
+
+        // 5. Synchronize On-Canvas Action Overlay position
+        this.syncQuestionOverlay();
+    }
+
+    drawQuestionCard(question, background) {
+        if (!question || !question.questionText) return;
+
+        const isDarkBg = background === 'Blackboard' || background === 'DarkGrid' || background === 'DarkRuled';
+        const cardX = question.x || 80;
+        const cardY = question.y || 80;
+        const cardW = Math.max(500, question.width || 1000);
+        const padding = 24;
+        const innerW = cardW - (padding * 2);
+        let currentY = cardY + padding;
+
+        const fontSize = Math.max(16, question.fontSize || 26);
+        const titleFontSize = Math.round(fontSize * 0.75);
+        const optionFontSize = Math.round(fontSize * 0.85);
+        const fontFamily = question.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+        // Helper to wrap text cleanly
+        const wrapText = (text, maxW, font) => {
+            this.ctx.font = font;
+            const lines = [];
+            const paragraphs = String(text).split('\n');
+            for (const para of paragraphs) {
+                const words = para.split(' ');
+                let curLine = '';
+                for (const word of words) {
+                    const testLine = curLine ? curLine + ' ' + word : word;
+                    const w = this.ctx.measureText(testLine).width;
+                    if (w > maxW && curLine) {
+                        lines.push(curLine);
+                        curLine = word;
+                    } else {
+                        curLine = testLine;
+                    }
+                }
+                if (curLine) lines.push(curLine);
+            }
+            return lines;
+        };
+
+        const qFont = `600 ${fontSize}px ${fontFamily}`;
+        const qLines = wrapText(question.questionText, innerW, qFont);
+        const qLineHeight = fontSize * 1.35;
+
+        // Calculate card height dynamically
+        let estimatedH = padding;
+        if (question.questionNumber) estimatedH += titleFontSize + 12;
+        estimatedH += (qLines.length * qLineHeight) + 16;
+
+        const optHeight = Math.max(44, optionFontSize * 2.2);
+        const optSpacing = 10;
+        const options = question.options || [];
+        estimatedH += (options.length * (optHeight + optSpacing));
+
+        if (question.isAnswerRevealed && question.correctAnswer) {
+            estimatedH += 36;
+        }
+        estimatedH += padding;
+        question._cardHeight = estimatedH;
+
+        // 1. Draw Card Background Container
+        this.ctx.save();
+        this.ctx.fillStyle = isDarkBg ? 'rgba(30, 41, 59, 0.95)' : 'rgba(255, 255, 255, 0.96)';
+        this.ctx.strokeStyle = isDarkBg ? 'rgba(56, 189, 248, 0.7)' : 'rgba(203, 213, 225, 0.85)';
+        this.ctx.lineWidth = 2;
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+        this.ctx.shadowBlur = 12;
+        this.ctx.shadowOffsetY = 4;
+
+        this.ctx.beginPath();
+        if (this.ctx.roundRect) {
+            this.ctx.roundRect(cardX, cardY, cardW, estimatedH, 14);
+        } else {
+            this.ctx.rect(cardX, cardY, cardW, estimatedH);
+        }
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.restore();
+
+        // 2. Draw Question Number / Title Header
+        this.ctx.save();
+        this.ctx.textBaseline = 'top';
+        if (question.questionNumber) {
+            this.ctx.font = `bold ${titleFontSize}px ${fontFamily}`;
+            this.ctx.fillStyle = isDarkBg ? '#38BDF8' : '#0284C7';
+            this.ctx.fillText(question.questionNumber.toUpperCase(), cardX + padding, currentY);
+            currentY += titleFontSize + 12;
+        }
+
+        // 3. Draw Question Text Prompt Lines
+        this.ctx.font = qFont;
+        this.ctx.fillStyle = isDarkBg ? '#FFFFFF' : '#0F172A';
+        for (const line of qLines) {
+            this.ctx.fillText(line, cardX + padding, currentY);
+            currentY += qLineHeight;
+        }
+        currentY += 12;
+
+        // 4. Draw Options
+        const optFont = `400 ${optionFontSize}px ${fontFamily}`;
+        const badgeFont = `bold ${Math.round(optionFontSize * 0.9)}px ${fontFamily}`;
+        const checkFont = `bold ${Math.round(optionFontSize * 1.05)}px ${fontFamily}`;
+
+        for (let i = 0; i < options.length; i++) {
+            const opt = options[i];
+            const optY = currentY;
+            const isCorrect = question.isAnswerRevealed && (question.correctAnswer && question.correctAnswer.toUpperCase() === (opt.label || '').toUpperCase());
+
+            // Option Pill Box
+            this.ctx.beginPath();
+            if (this.ctx.roundRect) {
+                this.ctx.roundRect(cardX + padding, optY, innerW, optHeight, 8);
+            } else {
+                this.ctx.rect(cardX + padding, optY, innerW, optHeight);
+            }
+
+            if (isCorrect) {
+                this.ctx.fillStyle = isDarkBg ? 'rgba(22, 101, 52, 0.9)' : 'rgba(220, 252, 231, 0.95)';
+                this.ctx.strokeStyle = '#22C55E';
+                this.ctx.lineWidth = 2;
+            } else {
+                this.ctx.fillStyle = isDarkBg ? 'rgba(15, 23, 42, 0.85)' : 'rgba(248, 250, 252, 0.9)';
+                this.ctx.strokeStyle = isDarkBg ? 'rgba(51, 65, 85, 0.8)' : 'rgba(226, 232, 240, 0.9)';
+                this.ctx.lineWidth = 1;
+            }
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            // Letter Badge (e.g. A, B, C, D)
+            const badgeSize = optHeight - 12;
+            const badgeX = cardX + padding + 8;
+            const badgeY = optY + 6;
+
+            this.ctx.beginPath();
+            if (this.ctx.roundRect) {
+                this.ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 6);
+            } else {
+                this.ctx.rect(badgeX, badgeY, badgeSize, badgeSize);
+            }
+            this.ctx.fillStyle = isCorrect ? '#22C55E' : (isDarkBg ? '#38BDF8' : '#0284C7');
+            this.ctx.fill();
+
+            // Badge letter text
+            this.ctx.font = badgeFont;
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(opt.label || String.fromCharCode(65 + i), badgeX + (badgeSize / 2), badgeY + (badgeSize / 2));
+
+            // Option text content
+            this.ctx.font = optFont;
+            this.ctx.fillStyle = isDarkBg ? '#F1F5F9' : '#1E293B';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(opt.text || '', badgeX + badgeSize + 12, optY + (optHeight / 2));
+
+            // Checkmark if correct & revealed
+            if (isCorrect) {
+                this.ctx.font = checkFont;
+                this.ctx.fillStyle = '#22C55E';
+                this.ctx.textAlign = 'right';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText('✓ Correct', cardX + padding + innerW - 16, optY + (optHeight / 2));
+            }
+
+            currentY += optHeight + optSpacing;
+        }
+
+        // 5. Draw Revealed Answer Banner
+        if (question.isAnswerRevealed && question.correctAnswer) {
+            this.ctx.font = `bold ${Math.round(optionFontSize * 1.05)}px ${fontFamily}`;
+            this.ctx.fillStyle = '#22C55E';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillText(`✓ Correct Answer: Option ${question.correctAnswer}`, cardX + padding, currentY + 12);
+        }
+
+        this.ctx.restore();
+    }
+
+    syncQuestionOverlay() {
+        const overlay = document.getElementById('canvasQuestionOverlay');
+        if (!overlay) return;
+
+        const q = this.currentPage?.question;
+        if (!q || !q.questionText) {
+            overlay.style.display = 'none';
+            return;
+        }
+
+        const scaleX = this.cssWidth / 1920;
+        const scaleY = this.cssHeight / 1080;
+
+        const left = (q.x || 80) * scaleX;
+        let top = ((q.y || 80) - 44) * scaleY;
+        if (top < 8) {
+            top = ((q.y || 80) + 8) * scaleY;
+        }
+
+        overlay.style.display = 'flex';
+        overlay.style.left = `${Math.max(8, left)}px`;
+        overlay.style.top = `${Math.max(8, top)}px`;
+
+        const btnToggleReveal = document.getElementById('btnToggleAnswerReveal');
+        if (btnToggleReveal) {
+            if (q.isAnswerRevealed) {
+                btnToggleReveal.textContent = '🙈 Hide Answer';
+                btnToggleReveal.classList.remove('btn-success');
+                btnToggleReveal.classList.add('btn-warning');
+            } else {
+                btnToggleReveal.textContent = '👁 Reveal Answer';
+                btnToggleReveal.classList.remove('btn-warning');
+                btnToggleReveal.classList.add('btn-success');
+            }
         }
     }
 
@@ -672,6 +898,10 @@ class WriteStudioEngine {
         const allToolBtns = document.querySelectorAll('.tool-btn');
         allToolBtns.forEach(btn => {
             btn.addEventListener('click', () => {
+                if (btn.dataset.tool === 'question') {
+                    this.openQuestionModal();
+                    return;
+                }
                 allToolBtns.forEach(b => {
                     if (b.dataset.tool === btn.dataset.tool) b.classList.add('active');
                     else b.classList.remove('active');
@@ -743,6 +973,7 @@ class WriteStudioEngine {
                 index: newIndex,
                 title: `Page ${newIndex + 1}`,
                 background: this.activeBackground,
+                question: null,
                 strokes: []
             });
             this.setPageIndex(newIndex);
@@ -809,6 +1040,7 @@ class WriteStudioEngine {
         }
 
         this.renderCanvas();
+        this.syncQuestionOverlay();
     }
 
     undo() {
@@ -826,8 +1058,17 @@ class WriteStudioEngine {
             const page = this.pages[action.pageIndex];
             page.strokes = action.strokes;
             this.redoStack.push(action);
+        } else if (action.type === 'setQuestion') {
+            const page = this.pages[action.pageIndex];
+            page.question = action.prevQuestion ? { ...action.prevQuestion } : null;
+            this.redoStack.push(action);
+        } else if (action.type === 'deleteQuestion') {
+            const page = this.pages[action.pageIndex];
+            page.question = action.prevQuestion ? { ...action.prevQuestion } : null;
+            this.redoStack.push(action);
         }
         this.renderCanvas();
+        this.syncQuestionOverlay();
     }
 
     redo() {
@@ -846,8 +1087,407 @@ class WriteStudioEngine {
             const page = this.pages[action.pageIndex];
             page.strokes = [];
             this.undoStack.push(action);
+        } else if (action.type === 'setQuestion') {
+            const page = this.pages[action.pageIndex];
+            page.question = action.nextQuestion ? { ...action.nextQuestion } : null;
+            this.undoStack.push(action);
+        } else if (action.type === 'deleteQuestion') {
+            const page = this.pages[action.pageIndex];
+            page.question = null;
+            this.undoStack.push(action);
         }
         this.renderCanvas();
+        this.syncQuestionOverlay();
+    }
+
+    // ==========================================
+    // MCQ / Question Component Logic
+    // ==========================================
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    openQuestionModal() {
+        const modal = document.getElementById('questionEditorModal');
+        if (!modal) return;
+
+        const q = this.currentPage?.question;
+        const inputNum = document.getElementById('inputQuestionNumber');
+        const inputText = document.getElementById('inputQuestionText');
+        const selectFontSize = document.getElementById('selectQuestionFontSize');
+        const checkReveal = document.getElementById('checkRevealAnswerOnSave');
+        const btnDeleteInModal = document.getElementById('btnDeleteQuestionInModal');
+        const optionsContainer = document.getElementById('questionOptionsContainer');
+        const selectCorrectAnswer = document.getElementById('selectCorrectAnswer');
+        const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+        const updateCorrectAnswerSelect = (labels, selectedVal) => {
+            selectCorrectAnswer.innerHTML = '<option value="">None (Ungraded / Poll)</option>';
+            labels.forEach(lbl => {
+                const opt = document.createElement('option');
+                opt.value = lbl;
+                opt.textContent = `Option ${lbl}`;
+                if (lbl === selectedVal) opt.selected = true;
+                selectCorrectAnswer.appendChild(opt);
+            });
+        };
+
+        const renderOptionRows = (optionsData = []) => {
+            optionsContainer.innerHTML = '';
+            const count = Math.max(2, Math.min(6, optionsData.length || 4));
+
+            for (let i = 0; i < count; i++) {
+                const lbl = optionLabels[i];
+                const textVal = optionsData[i] ? optionsData[i].text : '';
+                const row = document.createElement('div');
+                row.className = 'question-option-row';
+                row.dataset.label = lbl;
+                row.innerHTML = `
+                    <span class="option-badge-label">${lbl}</span>
+                    <input type="text" class="form-control question-option-input" placeholder="Option ${lbl} text..." value="${this.escapeHtml(textVal)}">
+                    <button type="button" class="btn btn-xs btn-outline-danger btn-remove-option" title="Remove Option" ${count <= 2 ? 'disabled' : ''}>✕</button>
+                `;
+                optionsContainer.appendChild(row);
+            }
+
+            // Bind remove buttons
+            const removeBtns = optionsContainer.querySelectorAll('.btn-remove-option');
+            removeBtns.forEach((btn, idx) => {
+                btn.addEventListener('click', () => {
+                    const currentRows = optionsContainer.querySelectorAll('.question-option-row');
+                    if (currentRows.length <= 2) return;
+                    const data = [];
+                    currentRows.forEach((r, rIdx) => {
+                        if (rIdx !== idx) {
+                            const inp = r.querySelector('.question-option-input');
+                            data.push({ text: inp.value });
+                        }
+                    });
+                    const curSelected = selectCorrectAnswer.value;
+                    renderOptionRows(data);
+                    const newLabels = optionLabels.slice(0, data.length);
+                    updateCorrectAnswerSelect(newLabels, newLabels.includes(curSelected) ? curSelected : '');
+                });
+            });
+
+            const btnAddOpt = document.getElementById('btnAddOptionRow');
+            if (btnAddOpt) btnAddOpt.disabled = count >= 6;
+        };
+
+        if (q) {
+            document.getElementById('questionModalTitle').textContent = `✏ Edit MCQ Question (Page ${this.currentPageIndex + 1})`;
+            inputNum.value = q.questionNumber || `Question ${this.currentPageIndex + 1}`;
+            inputText.value = q.questionText || '';
+            selectFontSize.value = String(q.fontSize || 26);
+            checkReveal.checked = !!q.isAnswerRevealed;
+            if (btnDeleteInModal) btnDeleteInModal.style.display = 'inline-block';
+
+            const opts = q.options && q.options.length ? q.options : [{ label: 'A', text: '' }, { label: 'B', text: '' }, { label: 'C', text: '' }, { label: 'D', text: '' }];
+            const labels = opts.map((_, i) => optionLabels[i]);
+            renderOptionRows(opts);
+            updateCorrectAnswerSelect(labels, q.correctAnswer || '');
+        } else {
+            document.getElementById('questionModalTitle').textContent = `❓ Add MCQ Question (Page ${this.currentPageIndex + 1})`;
+            inputNum.value = `Question ${this.currentPageIndex + 1}`;
+            inputText.value = '';
+            selectFontSize.value = '26';
+            checkReveal.checked = false;
+            if (btnDeleteInModal) btnDeleteInModal.style.display = 'none';
+
+            const defaultOpts = [{ text: '' }, { text: '' }, { text: '' }, { text: '' }];
+            renderOptionRows(defaultOpts);
+            updateCorrectAnswerSelect(['A', 'B', 'C', 'D'], '');
+        }
+
+        modal.style.display = 'flex';
+        setTimeout(() => inputText.focus(), 60);
+    }
+
+    bindQuestionEvents() {
+        const modal = document.getElementById('questionEditorModal');
+        const overlay = document.getElementById('canvasQuestionOverlay');
+        const btnAddQuestion = document.getElementById('btnAddQuestion');
+        const btnEditQuestion = document.getElementById('btnEditQuestion');
+        const btnClose = document.getElementById('btnCloseQuestionModal');
+        const btnCancel = document.getElementById('btnCancelQuestionModal');
+        const btnSave = document.getElementById('btnSaveQuestionModal');
+        const btnDeleteInModal = document.getElementById('btnDeleteQuestionInModal');
+        const btnDeleteQuestion = document.getElementById('btnDeleteQuestion');
+        const btnToggleReveal = document.getElementById('btnToggleAnswerReveal');
+        const btnZoomDec = document.getElementById('btnZoomQuestionDec');
+        const btnZoomInc = document.getElementById('btnZoomQuestionInc');
+        const btnDrag = document.getElementById('btnDragQuestion');
+        const btnAddOptionRow = document.getElementById('btnAddOptionRow');
+        const optionsContainer = document.getElementById('questionOptionsContainer');
+        const selectCorrectAnswer = document.getElementById('selectCorrectAnswer');
+
+        const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+        // Stop overlay events from triggering drawing canvas strokes
+        if (overlay) {
+            overlay.addEventListener('pointerdown', (e) => e.stopPropagation());
+            overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+            overlay.addEventListener('touchstart', (e) => e.stopPropagation());
+        }
+
+        const closeModal = () => {
+            if (modal) modal.style.display = 'none';
+        };
+
+        if (btnAddQuestion) btnAddQuestion.addEventListener('click', () => this.openQuestionModal());
+        if (btnEditQuestion) btnEditQuestion.addEventListener('click', () => this.openQuestionModal());
+        if (btnClose) btnClose.addEventListener('click', closeModal);
+        if (btnCancel) btnCancel.addEventListener('click', closeModal);
+
+        if (btnAddOptionRow) {
+            btnAddOptionRow.addEventListener('click', () => {
+                const currentRows = optionsContainer.querySelectorAll('.question-option-row');
+                if (currentRows.length >= 6) return;
+                const data = [];
+                currentRows.forEach(r => {
+                    const inp = r.querySelector('.question-option-input');
+                    data.push({ text: inp ? inp.value : '' });
+                });
+                data.push({ text: '' });
+                const curSelected = selectCorrectAnswer.value;
+
+                // Re-render rows
+                optionsContainer.innerHTML = '';
+                const count = data.length;
+                for (let i = 0; i < count; i++) {
+                    const lbl = optionLabels[i];
+                    const textVal = data[i] ? data[i].text : '';
+                    const row = document.createElement('div');
+                    row.className = 'question-option-row';
+                    row.dataset.label = lbl;
+                    row.innerHTML = `
+                        <span class="option-badge-label">${lbl}</span>
+                        <input type="text" class="form-control question-option-input" placeholder="Option ${lbl} text..." value="${this.escapeHtml(textVal)}">
+                        <button type="button" class="btn btn-xs btn-outline-danger btn-remove-option" title="Remove Option" ${count <= 2 ? 'disabled' : ''}>✕</button>
+                    `;
+                    optionsContainer.appendChild(row);
+                }
+
+                // Bind remove buttons
+                optionsContainer.querySelectorAll('.btn-remove-option').forEach((btn, idx) => {
+                    btn.addEventListener('click', () => {
+                        const rows = optionsContainer.querySelectorAll('.question-option-row');
+                        if (rows.length <= 2) return;
+                        const remaining = [];
+                        rows.forEach((r, rIdx) => {
+                            if (rIdx !== idx) {
+                                const inp = r.querySelector('.question-option-input');
+                                remaining.push({ text: inp.value });
+                            }
+                        });
+                        const curSel = selectCorrectAnswer.value;
+                        optionsContainer.innerHTML = '';
+                        const newCount = remaining.length;
+                        for (let j = 0; j < newCount; j++) {
+                            const lbl = optionLabels[j];
+                            const textVal = remaining[j] ? remaining[j].text : '';
+                            const row = document.createElement('div');
+                            row.className = 'question-option-row';
+                            row.dataset.label = lbl;
+                            row.innerHTML = `
+                                <span class="option-badge-label">${lbl}</span>
+                                <input type="text" class="form-control question-option-input" placeholder="Option ${lbl} text..." value="${this.escapeHtml(textVal)}">
+                                <button type="button" class="btn btn-xs btn-outline-danger btn-remove-option" title="Remove Option" ${newCount <= 2 ? 'disabled' : ''}>✕</button>
+                            `;
+                            optionsContainer.appendChild(row);
+                        }
+                        const newLabels = optionLabels.slice(0, newCount);
+                        selectCorrectAnswer.innerHTML = '<option value="">None (Ungraded / Poll)</option>';
+                        newLabels.forEach(lbl => {
+                            const opt = document.createElement('option');
+                            opt.value = lbl;
+                            opt.textContent = `Option ${lbl}`;
+                            if (lbl === curSel) opt.selected = true;
+                            selectCorrectAnswer.appendChild(opt);
+                        });
+                        btnAddOptionRow.disabled = newCount >= 6;
+                    });
+                });
+
+                const newLabels = optionLabels.slice(0, count);
+                selectCorrectAnswer.innerHTML = '<option value="">None (Ungraded / Poll)</option>';
+                newLabels.forEach(lbl => {
+                    const opt = document.createElement('option');
+                    opt.value = lbl;
+                    opt.textContent = `Option ${lbl}`;
+                    if (lbl === curSelected) opt.selected = true;
+                    selectCorrectAnswer.appendChild(opt);
+                });
+                btnAddOptionRow.disabled = count >= 6;
+            });
+        }
+
+        const deleteQuestion = () => {
+            const prev = this.currentPage.question;
+            if (!prev) return;
+            this.currentPage.question = null;
+            this.undoStack.push({
+                type: 'deleteQuestion',
+                prevQuestion: prev,
+                pageIndex: this.currentPageIndex
+            });
+            this.redoStack = [];
+            closeModal();
+            this.renderCanvas();
+            this.syncQuestionOverlay();
+        };
+
+        if (btnDeleteInModal) {
+            btnDeleteInModal.addEventListener('click', () => {
+                if (confirm('Are you sure you want to remove the question from this page?')) {
+                    deleteQuestion();
+                }
+            });
+        }
+
+        if (btnDeleteQuestion) {
+            btnDeleteQuestion.addEventListener('click', () => {
+                if (confirm('Are you sure you want to remove the question from this page?')) {
+                    deleteQuestion();
+                }
+            });
+        }
+
+        if (btnSave) {
+            btnSave.addEventListener('click', () => {
+                const inputNum = document.getElementById('inputQuestionNumber');
+                const inputText = document.getElementById('inputQuestionText');
+                const selectFontSize = document.getElementById('selectQuestionFontSize');
+                const checkReveal = document.getElementById('checkRevealAnswerOnSave');
+
+                const text = (inputText.value || '').trim();
+                if (!text) {
+                    alert('Please enter the question text or prompt.');
+                    inputText.focus();
+                    return;
+                }
+
+                const rows = optionsContainer.querySelectorAll('.question-option-row');
+                const options = [];
+                rows.forEach((r, idx) => {
+                    const lbl = optionLabels[idx] || `Option ${idx + 1}`;
+                    const val = r.querySelector('.question-option-input').value.trim();
+                    options.push({ label: lbl, text: val });
+                });
+
+                const prev = this.currentPage.question ? { ...this.currentPage.question } : null;
+                const newQ = {
+                    id: prev?.id || this.generateGuid(),
+                    questionNumber: inputNum.value.trim(),
+                    questionText: text,
+                    options: options,
+                    correctAnswer: selectCorrectAnswer.value || '',
+                    isAnswerRevealed: checkReveal.checked,
+                    x: prev?.x ?? 80,
+                    y: prev?.y ?? 80,
+                    width: prev?.width ?? 1000,
+                    fontSize: parseInt(selectFontSize.value, 10) || 26,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                };
+
+                this.currentPage.question = newQ;
+                this.undoStack.push({
+                    type: 'setQuestion',
+                    prevQuestion: prev,
+                    nextQuestion: { ...newQ },
+                    pageIndex: this.currentPageIndex
+                });
+                this.redoStack = [];
+
+                closeModal();
+                this.renderCanvas();
+                this.syncQuestionOverlay();
+            });
+        }
+
+        // Toggle Answer Reveal
+        if (btnToggleReveal) {
+            btnToggleReveal.addEventListener('click', () => {
+                const q = this.currentPage?.question;
+                if (!q) return;
+                q.isAnswerRevealed = !q.isAnswerRevealed;
+                this.renderCanvas();
+                this.syncQuestionOverlay();
+            });
+        }
+
+        // Font Zoom
+        if (btnZoomDec) {
+            btnZoomDec.addEventListener('click', () => {
+                const q = this.currentPage?.question;
+                if (!q) return;
+                q.fontSize = Math.max(16, (q.fontSize || 26) - 2);
+                this.renderCanvas();
+            });
+        }
+        if (btnZoomInc) {
+            btnZoomInc.addEventListener('click', () => {
+                const q = this.currentPage?.question;
+                if (!q) return;
+                q.fontSize = Math.min(42, (q.fontSize || 26) + 2);
+                this.renderCanvas();
+            });
+        }
+
+        // Drag Overlay / Reposition Question
+        if (btnDrag) {
+            let isDragging = false;
+            let startClientX = 0;
+            let startClientY = 0;
+            let startQx = 0;
+            let startQy = 0;
+
+            btnDrag.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                const q = this.currentPage?.question;
+                if (!q) return;
+                isDragging = true;
+                btnDrag.setPointerCapture(e.pointerId);
+                startClientX = e.clientX;
+                startClientY = e.clientY;
+                startQx = q.x || 80;
+                startQy = q.y || 80;
+                e.preventDefault();
+            });
+
+            btnDrag.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                e.stopPropagation();
+                const q = this.currentPage?.question;
+                if (!q) return;
+
+                const scaleX = this.cssWidth / 1920;
+                const scaleY = this.cssHeight / 1080;
+                const dx = (e.clientX - startClientX) / scaleX;
+                const dy = (e.clientY - startClientY) / scaleY;
+
+                q.x = Math.round(Math.max(20, Math.min(1920 - (q.width || 1000) - 20, startQx + dx)));
+                q.y = Math.round(Math.max(20, Math.min(1080 - (q._cardHeight || 300) - 20, startQy + dy)));
+
+                this.renderCanvas();
+            });
+
+            const endDrag = (e) => {
+                if (isDragging) {
+                    isDragging = false;
+                    try { btnDrag.releasePointerCapture(e.pointerId); } catch { }
+                }
+            };
+
+            btnDrag.addEventListener('pointerup', endDrag);
+            btnDrag.addEventListener('pointercancel', endDrag);
+        }
     }
 
     // ==========================================
@@ -2409,6 +3049,22 @@ class WriteStudioEngine {
                     index: page.index,
                     title: page.title,
                     background: page.background || 'Blackboard',
+                    question: page.question ? {
+                        id: page.question.id || this.generateGuid(),
+                        questionNumber: page.question.questionNumber || '',
+                        questionText: page.question.questionText || '',
+                        options: (page.question.options || []).map(opt => ({
+                            label: opt.label || '',
+                            text: opt.text || ''
+                        })),
+                        correctAnswer: page.question.correctAnswer || '',
+                        isAnswerRevealed: !!page.question.isAnswerRevealed,
+                        x: page.question.x || 80,
+                        y: page.question.y || 80,
+                        width: page.question.width || 1000,
+                        fontSize: page.question.fontSize || 26,
+                        fontFamily: page.question.fontFamily || 'sans-serif'
+                    } : null,
                     strokes: (page.strokes || []).map(stroke => ({
                         id: stroke.id || this.generateGuid(),
                         pageIndex: stroke.pageIndex || 0,

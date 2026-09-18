@@ -10,6 +10,7 @@ public class WhiteboardPage
     public string Title { get; set; } = "Page 1";
     public BackgroundStyle Background { get; set; } = BackgroundStyle.White;
     public List<DrawingStroke> Strokes { get; set; } = new();
+    public QuestionItem? Question { get; set; }
 
     public WhiteboardPage Clone()
     {
@@ -19,7 +20,8 @@ public class WhiteboardPage
             Index = Index,
             Title = Title,
             Background = Background,
-            Strokes = Strokes.Select(s => s.Clone()).ToList()
+            Strokes = Strokes.Select(s => s.Clone()).ToList(),
+            Question = Question?.Clone()
         };
     }
 }

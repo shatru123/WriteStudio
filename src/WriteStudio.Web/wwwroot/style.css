@@ -1731,3 +1731,114 @@ body {
         margin: 10px auto;
     }
 }
+
+/* ==========================================
+   MCQ / Question Component Styles
+   ========================================== */
+.modal-question-editor {
+    width: 620px;
+    max-width: 96vw;
+    background: #0F172A;
+    border: 1px solid #334155;
+    border-radius: 12px;
+}
+
+.question-editor-body {
+    padding: 20px;
+    max-height: 75vh;
+    overflow-y: auto;
+}
+
+.question-options-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.question-option-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.option-badge-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: #0284C7;
+    color: #FFF;
+    font-weight: 700;
+    font-size: 14px;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.option-badge-label.is-correct {
+    background: #16A34A;
+}
+
+.btn-remove-option {
+    background: rgba(239, 68, 68, 0.15);
+    color: #EF4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+}
+
+.btn-remove-option:hover {
+    background: #EF4444;
+    color: #FFF;
+}
+
+/* On-Canvas Question Action Overlay Bar */
+.canvas-question-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid #334155;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    padding: 4px 8px;
+    z-index: 50;
+    user-select: none;
+    transition: opacity 0.2s ease;
+}
+
+.question-overlay-handle {
+    font-size: 12px;
+    font-weight: 700;
+    color: #38BDF8;
+    cursor: grab;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px dashed rgba(56, 189, 248, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.question-overlay-handle:hover {
+    background: rgba(56, 189, 248, 0.22);
+}
+
+.question-overlay-handle.dragging {
+    cursor: grabbing;
+}
+

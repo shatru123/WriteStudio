@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WriteStudio — .NET Teaching & Lecture Studio</title>
-    <link rel="stylesheet" href="style.css?v=2.8">
+    <link rel="stylesheet" href="style.css?v=2.9">
 </head>
 <body>
     <!-- Header -->
@@ -108,18 +108,29 @@
                         <span>📹 Camera Off</span>
                     </div>
                 </div>
+
+                <!-- On-Canvas Question Action Toolbar (Move, Edit, Reveal Answer, Font Zoom, Delete) -->
+                <div id="canvasQuestionOverlay" class="canvas-question-overlay" style="display:none">
+                    <div class="question-overlay-handle" id="btnDragQuestion" title="Drag to reposition question on canvas">⠿ Move</div>
+                    <button type="button" id="btnEditQuestion" class="btn btn-xs btn-dark" title="Edit question and options">✏ Edit</button>
+                    <button type="button" id="btnToggleAnswerReveal" class="btn btn-xs btn-success" title="Reveal / Hide correct answer">👁 Reveal Answer</button>
+                    <button type="button" id="btnZoomQuestionDec" class="btn btn-xs btn-dark" title="Decrease font size">A-</button>
+                    <button type="button" id="btnZoomQuestionInc" class="btn btn-xs btn-dark" title="Increase font size">A+</button>
+                    <button type="button" id="btnDeleteQuestion" class="btn btn-xs btn-danger" title="Remove question from this page">🗑 Delete</button>
+                </div>
             </div>
 
             <!-- Canvas Page Switcher Bar -->
             <div class="page-bar">
                 <div class="page-nav">
-                    <button id="btnPrevPage" class="btn btn-sm btn-dark">◀</button>
+                    <button id="btnPrevPage" class="btn btn-sm btn-dark" title="Previous Page">◀</button>
                     <span id="pageIndicator" class="page-indicator">Page 1 of 1</span>
-                    <button id="btnNextPage" class="btn btn-sm btn-dark">▶</button>
+                    <button id="btnNextPage" class="btn btn-sm btn-dark" title="Next Page">▶</button>
                 </div>
                 <div class="page-actions">
-                    <button id="btnAddPage" class="btn btn-sm btn-primary">➕ Add Page</button>
-                    <button id="btnDeletePage" class="btn btn-sm btn-danger">🗑 Delete</button>
+                    <button id="btnAddQuestion" class="btn btn-sm btn-primary" title="Add or Edit Question on Current Page">❓ Add Question</button>
+                    <button id="btnAddPage" class="btn btn-sm btn-secondary" title="Add New Page">➕ Add Page</button>
+                    <button id="btnDeletePage" class="btn btn-sm btn-danger" title="Delete Current Page">🗑 Delete</button>
                 </div>
             </div>
         </section>
@@ -142,6 +153,7 @@
                 <button class="tool-btn" data-tool="circle" title="Circle">⭕ Circle</button>
                 <button class="tool-btn" data-tool="arrow" title="Arrow Indicator">➔ Arrow</button>
                 <button class="tool-btn" data-tool="text" title="Text Annotation">🔤 Text</button>
+                <button class="tool-btn" data-tool="question" id="btnToolQuestion" title="Add / Edit MCQ Question">❓ Question</button>
             </div>
 
             <div class="divider"></div>
@@ -461,7 +473,74 @@
         </div>
     </div>
 
-    <script src="jszip.min.js?v=2.8"></script>
-    <script src="studio.js?v=2.8"></script>
+    <!-- ❓ MCQ / Question Editor Modal -->
+    <div id="questionEditorModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog modal-question-editor">
+            <div class="modal-header">
+                <h3 id="questionModalTitle">❓ Add / Edit MCQ Question (Current Page)</h3>
+                <button id="btnCloseQuestionModal" class="btn-close" title="Close dialog">&times;</button>
+            </div>
+            <div class="modal-body question-editor-body">
+                <div class="form-group mb-3">
+                    <label class="form-label" for="inputQuestionNumber">Question Header / Number (Optional):</label>
+                    <input type="text" id="inputQuestionNumber" class="form-control" placeholder="e.g. Question 1 or Q1" value="Question 1">
+                </div>
+
+                <div class="form-group mb-3">
+                    <label class="form-label" for="inputQuestionText">Question Prompt / Statement:</label>
+                    <textarea id="inputQuestionText" class="form-control" rows="3" placeholder="Enter your question text or code snippet here..."></textarea>
+                </div>
+
+                <div class="form-group mb-3">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label class="form-label" style="margin-bottom:0;">Multiple Choice Options (2 to 6):</label>
+                        <button type="button" id="btnAddOptionRow" class="btn btn-xs btn-primary">+ Add Option</button>
+                    </div>
+                    <div id="questionOptionsContainer" class="question-options-container">
+                        <!-- Dynamic option rows -->
+                    </div>
+                </div>
+
+                <div class="row" style="display:flex; gap:12px; margin-bottom:12px;">
+                    <div style="flex:1;">
+                        <label class="form-label" for="selectCorrectAnswer">Correct Answer (Optional):</label>
+                        <select id="selectCorrectAnswer" class="form-select">
+                            <option value="">None (Ungraded / Poll)</option>
+                            <option value="A">Option A</option>
+                            <option value="B">Option B</option>
+                            <option value="C">Option C</option>
+                            <option value="D">Option D</option>
+                        </select>
+                    </div>
+                    <div style="flex:1;">
+                        <label class="form-label" for="selectQuestionFontSize">Font Size:</label>
+                        <select id="selectQuestionFontSize" class="form-select">
+                            <option value="18">Small (18px)</option>
+                            <option value="22">Medium (22px)</option>
+                            <option value="26" selected>Large (26px)</option>
+                            <option value="32">Extra Large (32px)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-check" style="margin-bottom:8px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#94A3B8; cursor:pointer;">
+                        <input type="checkbox" id="checkRevealAnswerOnSave" style="width:16px; height:16px;">
+                        <span>Reveal correct answer immediately on canvas</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content:space-between;">
+                <button type="button" id="btnDeleteQuestionInModal" class="btn btn-danger" style="display:none;">🗑 Delete Question</button>
+                <div style="display:flex; gap:8px; margin-left:auto;">
+                    <button type="button" id="btnCancelQuestionModal" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="btnSaveQuestionModal" class="btn btn-primary">✓ Save to Page</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="jszip.min.js?v=2.9"></script>
+    <script src="studio.js?v=2.9"></script>
 </body>
 </html>

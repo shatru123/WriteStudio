@@ -6,7 +6,8 @@ public record WhiteboardRenderState(
     int PageIndex,
     BackgroundStyle Background,
     IReadOnlyList<DrawingStroke> VisibleStrokes,
-    CameraLayout CameraLayout
+    CameraLayout CameraLayout,
+    QuestionItem? Question = null
 );
 
 public class TimelineWhiteboardReconstructor
@@ -119,11 +120,14 @@ public class TimelineWhiteboardReconstructor
             }
         }
 
+        var activeQuestion = _session.Pages.FirstOrDefault(p => p.Index == activePageIndex)?.Question;
+
         return new WhiteboardRenderState(
             PageIndex: activePageIndex,
             Background: currentBg,
             VisibleStrokes: visibleStrokes,
-            CameraLayout: cameraLayout
+            CameraLayout: cameraLayout,
+            Question: activeQuestion
         );
     }
 }
