@@ -17,10 +17,25 @@ using WriteStudio.Whiteboard.UndoRedo;
 Environment.SetEnvironmentVariable("DOTNET_USE_POLLING_FILE_WATCHER", "true");
 Environment.SetEnvironmentVariable("DOTNET_SYSTEM_IO_DISABLEFILEWATCHING", "true");
 
+// Determine content root containing wwwroot (handles container and local dev environments)
+string contentRoot = AppContext.BaseDirectory;
+if (!Directory.Exists(Path.Combine(contentRoot, "wwwroot")))
+{
+    string currentDir = Directory.GetCurrentDirectory();
+    if (Directory.Exists(Path.Combine(currentDir, "wwwroot")))
+    {
+        contentRoot = currentDir;
+    }
+    else if (Directory.Exists(Path.Combine(currentDir, "src", "WriteStudio.Web", "wwwroot")))
+    {
+        contentRoot = Path.Combine(currentDir, "src", "WriteStudio.Web");
+    }
+}
+
 var builderOptions = new WebApplicationOptions
 {
     Args = args,
-    ContentRootPath = AppContext.BaseDirectory
+    ContentRootPath = contentRoot
 };
 
 var builder = WebApplication.CreateBuilder(builderOptions);
@@ -279,7 +294,7 @@ app.MapPost("/api/projects/save", async (
     return Results.Ok(new { success = true, path = targetDir });
 });
 
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5123";
 Console.WriteLine("===================================================================");
 Console.WriteLine("  WriteStudio Web Server Running!");
 Console.WriteLine($"  Listening on: http://0.0.0.0:{port}");
