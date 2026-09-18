@@ -129,6 +129,7 @@
                 </div>
                 <div class="page-actions">
                     <button id="btnAddQuestion" class="btn btn-sm btn-primary" title="Add or Edit Question on Current Page">❓ Add Question</button>
+                    <button id="btnImportQuestions" class="btn btn-sm btn-info" title="Import Questions from PPT, PPTX, PDF, or Images">📥 Import Questions</button>
                     <button id="btnAddPage" class="btn btn-sm btn-secondary" title="Add New Page">➕ Add Page</button>
                     <button id="btnDeletePage" class="btn btn-sm btn-danger" title="Delete Current Page">🗑 Delete</button>
                 </div>
@@ -154,6 +155,7 @@
                 <button class="tool-btn" data-tool="arrow" title="Arrow Indicator">➔ Arrow</button>
                 <button class="tool-btn" data-tool="text" title="Text Annotation">🔤 Text</button>
                 <button class="tool-btn" data-tool="question" id="btnToolQuestion" title="Add / Edit MCQ Question">❓ Question</button>
+                <button class="tool-btn" data-tool="import-question" id="btnToolImportQuestion" title="Import Questions (PPT, PDF, Image)">📥 Import Qs</button>
             </div>
 
             <div class="divider"></div>
@@ -540,7 +542,91 @@
         </div>
     </div>
 
-    <script src="jszip.min.js?v=2.9"></script>
-    <script src="studio.js?v=2.9"></script>
+    <!-- 📥 Question Import File Modal -->
+    <div id="questionImportModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog modal-question-import">
+            <div class="modal-header">
+                <h3>📥 Import Questions & MCQs</h3>
+                <button id="btnCloseQuestionImportModal" class="btn-close" title="Close dialog">&times;</button>
+            </div>
+            <div class="modal-body question-import-body">
+                <div class="import-dropzone" id="questionDropZone">
+                    <div class="dropzone-icon">📄</div>
+                    <h4>Drag & Drop PPT, PPTX, PDF, or Images Here</h4>
+                    <p class="dropzone-sub">or click browse to select from your device</p>
+                    <input type="file" id="questionImportFileInput" style="display:none" multiple accept=".ppt,.pptx,.ppsx,.pptm,.potx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.txt,.md">
+                    <button type="button" id="btnBrowseQuestionFiles" class="btn btn-primary" style="margin-top:12px;">📁 Browse Files</button>
+                    <div class="supported-formats-badge">
+                        <span>Supported: <b>PPT</b>, <b>PPTX</b>, <b>PDF</b>, <b>PNG</b>, <b>JPG</b>, <b>JPEG</b>, <b>WEBP</b></span>
+                    </div>
+                </div>
+
+                <!-- Extraction Progress Bar (shown during processing) -->
+                <div id="questionImportProgressContainer" style="display:none; margin-top:20px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px;">
+                        <span id="questionImportStatusText" style="color:#38BDF8; font-weight:600;">Extracting slides and running parser...</span>
+                        <span id="questionImportPercentText" style="color:#94A3B8;">0%</span>
+                    </div>
+                    <div class="progress" style="height:8px; background:#1E293B; border-radius:4px; overflow:hidden;">
+                        <div id="questionImportProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%; background:#0284C7; height:100%; transition:width 0.2s;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="btnCancelQuestionImport" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📋 Question Import Review / Edit Modal -->
+    <div id="questionReviewModal" class="modal-backdrop" style="display:none">
+        <div class="modal-dialog modal-question-review">
+            <div class="modal-header" style="flex-wrap:wrap; gap:8px;">
+                <div>
+                    <h3 style="margin:0;">📋 Review & Edit Extracted Questions</h3>
+                    <div id="reviewQuestionStats" style="font-size:13px; color:#94A3B8; margin-top:2px;">
+                        Found 0 questions
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+                    <button type="button" id="btnSelectAllReviewQuestions" class="btn btn-xs btn-dark">☑ Select All</button>
+                    <button type="button" id="btnDeselectAllReviewQuestions" class="btn btn-xs btn-dark">☐ Deselect All</button>
+                    <button type="button" id="btnAddManualReviewQuestion" class="btn btn-xs btn-primary">➕ Add Question</button>
+                    <button id="btnCloseQuestionReviewModal" class="btn-close" title="Close dialog">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body question-review-body">
+                <!-- Import Placement Mode Selector -->
+                <div class="import-mode-box">
+                    <label style="font-weight:600; font-size:13px; color:#E2E8F0; margin-bottom:6px; display:block;">Whiteboard Page Placement:</label>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                        <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#CBD5E1; cursor:pointer;">
+                            <input type="radio" name="importPlacementMode" value="new-pages" checked>
+                            <span>Create new whiteboard page for each question (Recommended)</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#CBD5E1; cursor:pointer;">
+                            <input type="radio" name="importPlacementMode" value="current-page">
+                            <span>Add to currently selected page</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Extracted Questions List Container -->
+                <div id="reviewQuestionsContainer" class="review-questions-container">
+                    <!-- Dynamic review cards will be injected here -->
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content:space-between;">
+                <div id="reviewSelectionCount" style="font-size:13px; color:#94A3B8;">0 questions selected</div>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" id="btnCancelQuestionReview" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="btnConfirmQuestionImport" class="btn btn-primary">📥 Import Selected Questions</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="jszip.min.js?v=3.0"></script>
+    <script src="studio.js?v=3.0"></script>
 </body>
 </html>

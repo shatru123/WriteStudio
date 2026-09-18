@@ -174,6 +174,7 @@ class WriteStudioEngine {
         this.bindCanvasEvents();
         this.bindToolEvents();
         this.bindQuestionEvents();
+        this.bindQuestionImportEvents();
         this.bindSlideEvents();
         this.bindSlideModalEvents();
         this.bindMediaEvents();
@@ -902,6 +903,10 @@ class WriteStudioEngine {
                     this.openQuestionModal();
                     return;
                 }
+                if (btn.dataset.tool === 'import-question') {
+                    this.openQuestionImportModal();
+                    return;
+                }
                 allToolBtns.forEach(b => {
                     if (b.dataset.tool === btn.dataset.tool) b.classList.add('active');
                     else b.classList.remove('active');
@@ -1066,6 +1071,10 @@ class WriteStudioEngine {
             const page = this.pages[action.pageIndex];
             page.question = action.prevQuestion ? { ...action.prevQuestion } : null;
             this.redoStack.push(action);
+        } else if (action.type === 'importQuestions') {
+            this.pages = JSON.parse(JSON.stringify(action.prevPages));
+            this.currentPageIndex = Math.min(action.prevPageIndex, this.pages.length - 1);
+            this.redoStack.push(action);
         }
         this.renderCanvas();
         this.syncQuestionOverlay();
@@ -1094,6 +1103,10 @@ class WriteStudioEngine {
         } else if (action.type === 'deleteQuestion') {
             const page = this.pages[action.pageIndex];
             page.question = null;
+            this.undoStack.push(action);
+        } else if (action.type === 'importQuestions') {
+            this.pages = JSON.parse(JSON.stringify(action.nextPages));
+            this.currentPageIndex = Math.min(action.nextPageIndex, this.pages.length - 1);
             this.undoStack.push(action);
         }
         this.renderCanvas();
@@ -1488,6 +1501,970 @@ class WriteStudioEngine {
             btnDrag.addEventListener('pointerup', endDrag);
             btnDrag.addEventListener('pointercancel', endDrag);
         }
+    }
+
+    // ==========================================
+    // 📥 Question / MCQ Import & Extraction Engine
+    // ==========================================
+    openQuestionImportModal() {
+        const modal = document.getElementById('questionImportModal');
+        if (!modal) return;
+        const progressBox = document.getElementById('questionImportProgressContainer');
+        const progressBar = document.getElementById('questionImportProgressBar');
+        const statusText = document.getElementById('questionImportStatusText');
+        const fileInput = document.getElementById('questionImportFileInput');
+
+        if (progressBox) progressBox.style.display = 'none';
+        if (progressBar) progressBar.style.width = '0%';
+        if (statusText) statusText.textContent = 'Ready to extract questions...';
+        if (fileInput) fileInput.value = '';
+
+        modal.style.display = 'flex';
+    }
+
+    bindQuestionImportEvents() {
+        const importModal = document.getElementById('questionImportModal');
+        const reviewModal = document.getElementById('questionReviewModal');
+        const btnImport = document.getElementById('btnImportQuestions');
+        const btnToolImport = document.getElementById('btnToolImportQuestion');
+        const btnCloseImport = document.getElementById('btnCloseQuestionImportModal');
+        const btnCancelImport = document.getElementById('btnCancelQuestionImport');
+        const btnCloseReview = document.getElementById('btnCloseQuestionReviewModal');
+        const btnCancelReview = document.getElementById('btnCancelQuestionReview');
+        const dropZone = document.getElementById('questionDropZone');
+        const fileInput = document.getElementById('questionImportFileInput');
+        const btnBrowse = document.getElementById('btnBrowseQuestionFiles');
+        const btnSelectAll = document.getElementById('btnSelectAllReviewQuestions');
+        const btnDeselectAll = document.getElementById('btnDeselectAllReviewQuestions');
+        const btnAddManual = document.getElementById('btnAddManualReviewQuestion');
+        const btnConfirmImport = document.getElementById('btnConfirmQuestionImport');
+
+        if (btnImport) btnImport.addEventListener('click', () => this.openQuestionImportModal());
+        if (btnToolImport) btnToolImport.addEventListener('click', () => this.openQuestionImportModal());
+
+        const closeImport = () => {
+            if (importModal) importModal.style.display = 'none';
+        };
+        const closeReview = () => {
+            if (reviewModal) reviewModal.style.display = 'none';
+        };
+
+        if (btnCloseImport) btnCloseImport.addEventListener('click', closeImport);
+        if (btnCancelImport) btnCancelImport.addEventListener('click', closeImport);
+        if (btnCloseReview) btnCloseReview.addEventListener('click', closeReview);
+        if (btnCancelReview) btnCancelReview.addEventListener('click', closeReview);
+
+        if (btnBrowse && fileInput) {
+            btnBrowse.addEventListener('click', () => fileInput.click());
+        }
+
+        // File input change handler
+        if (fileInput) {
+            fileInput.addEventListener('change', async (e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length === 0) return;
+                await this.handleQuestionFilesUpload(files);
+                fileInput.value = '';
+            });
+        }
+
+        // Drag and Drop handlers
+        if (dropZone) {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('drag-over');
+            });
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('drag-over');
+            });
+            dropZone.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('drag-over');
+                if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    await this.handleQuestionFilesUpload(Array.from(e.dataTransfer.files));
+                }
+            });
+        }
+    }
+
+    async handleQuestionFilesUpload(files) {
+        const progressBox = document.getElementById('questionImportProgressContainer');
+        const progressBar = document.getElementById('questionImportProgressBar');
+        const statusText = document.getElementById('questionImportStatusText');
+        const percentText = document.getElementById('questionImportPercentText');
+
+        if (progressBox) progressBox.style.display = 'block';
+
+        const updateProgress = (text, pct) => {
+            if (statusText) statusText.textContent = text;
+            if (progressBar) progressBar.style.width = `${pct}%`;
+            if (percentText) percentText.textContent = `${pct}%`;
+        };
+
+        try {
+            updateProgress('Reading files and extracting content...', 15);
+            const extractedQuestions = await this.extractQuestionsFromFiles(files, updateProgress);
+            updateProgress('Finalizing question structure...', 90);
+
+            await new Promise(r => setTimeout(r, 300));
+            updateProgress('Done!', 100);
+
+            // Close import modal and open review modal
+            const importModal = document.getElementById('questionImportModal');
+            if (importModal) importModal.style.display = 'none';
+
+            this.openQuestionReviewModal(extractedQuestions);
+        } catch (err) {
+            console.error('Extraction error:', err);
+            alert(`Error extracting questions from file: ${err.message || err}`);
+            if (progressBox) progressBox.style.display = 'none';
+        }
+    }
+
+    async extractQuestionsFromFiles(files, onProgress) {
+        const allQuestions = [];
+        const totalFiles = files.length;
+
+        for (let i = 0; i < totalFiles; i++) {
+            const file = files[i];
+            const ext = file.name.split('.').pop().toLowerCase();
+            const basePct = Math.round((i / totalFiles) * 80);
+
+            if (onProgress) {
+                onProgress(`Processing ${file.name} (${i + 1}/${totalFiles})...`, basePct + 5);
+            }
+
+            if (['pptx', 'ppsx', 'pptm', 'potx', 'odp'].includes(ext)) {
+                const qs = await this.extractQuestionsFromPptx(file);
+                allQuestions.push(...qs);
+            } else if (ext === 'ppt') {
+                const qs = await this.extractQuestionsFromPpt(file);
+                allQuestions.push(...qs);
+            } else if (ext === 'pdf') {
+                const qs = await this.extractQuestionsFromPdf(file, onProgress);
+                allQuestions.push(...qs);
+            } else if (file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(ext)) {
+                const qs = await this.extractQuestionsFromImage(file, onProgress);
+                allQuestions.push(...qs);
+            } else if (file.type.startsWith('text/') || ['txt', 'md', 'json', 'csv'].includes(ext)) {
+                const text = await new Promise(r => {
+                    const reader = new FileReader();
+                    reader.onload = () => r(reader.result);
+                    reader.onerror = () => r('');
+                    reader.readAsText(file);
+                });
+                const qs = this.parseQuestionsFromText(text, file.name);
+                allQuestions.push(...qs);
+            } else {
+                // Generic fallback
+                const qs = this.parseQuestionsFromText(`Question from ${file.name}\n\nA. Option A\nB. Option B\nC. Option C\nD. Option D`, file.name);
+                allQuestions.push(...qs);
+            }
+        }
+
+        // Re-index auto numbers if needed
+        allQuestions.forEach((q, idx) => {
+            if (!q.questionNumber || q.questionNumber.startsWith('Question ')) {
+                q.questionNumber = `Question ${idx + 1}`;
+            }
+        });
+
+        return allQuestions;
+    }
+
+    async extractQuestionsFromPptx(file) {
+        const questions = [];
+        if (typeof JSZip === 'undefined') {
+            await new Promise(r => setTimeout(r, 200));
+        }
+        const zip = await JSZip.loadAsync(await file.arrayBuffer());
+        const parser = new DOMParser();
+
+        const slideFiles = Object.keys(zip.files)
+            .filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+            .sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/)[0], 10);
+                const numB = parseInt(b.match(/\d+/)[0], 10);
+                return numA - numB;
+            });
+
+        for (let i = 0; i < slideFiles.length; i++) {
+            const slideFileName = slideFiles[i];
+            const slideNum = i + 1;
+            const slideXmlStr = await zip.file(slideFileName).async('string');
+            const slideDoc = parser.parseFromString(slideXmlStr, 'application/xml');
+
+            const paragraphs = [];
+            const pNodes = slideDoc.getElementsByTagName('a:p');
+            for (let p = 0; p < pNodes.length; p++) {
+                const tNodes = pNodes[p].getElementsByTagName('a:t');
+                const line = Array.from(tNodes).map(t => t.textContent).join('').trim();
+                if (line) paragraphs.push(line);
+            }
+
+            // Extract notes
+            let notesText = '';
+            const notesFile = zip.file(`ppt/notesSlides/notesSlide${slideNum}.xml`);
+            if (notesFile) {
+                try {
+                    const notesXml = await notesFile.async('string');
+                    const notesDoc = parser.parseFromString(notesXml, 'application/xml');
+                    const nNodes = notesDoc.getElementsByTagName('a:t');
+                    notesText = Array.from(nNodes).map(t => t.textContent).join(' ').trim();
+                } catch { }
+            }
+
+            const slideFullText = paragraphs.join('\n') + (notesText ? '\n' + notesText : '');
+            const parsed = this.parseQuestionsFromText(slideFullText, `${file.name} (Slide ${slideNum})`);
+            if (parsed.length > 0) {
+                questions.push(...parsed);
+            }
+        }
+
+        return questions;
+    }
+
+    async extractQuestionsFromPpt(file) {
+        const questions = [];
+        try {
+            const buffer = await file.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            let asciiRuns = [];
+            let currentRun = '';
+
+            for (let i = 0; i < bytes.length; i++) {
+                const b = bytes[i];
+                if ((b >= 32 && b <= 126) || b === 10 || b === 13 || b === 9) {
+                    currentRun += String.fromCharCode(b);
+                } else {
+                    if (currentRun.trim().length >= 3) {
+                        asciiRuns.push(currentRun.trim());
+                    }
+                    currentRun = '';
+                }
+            }
+            if (currentRun.trim().length >= 3) asciiRuns.push(currentRun.trim());
+
+            const fullText = asciiRuns.join('\n');
+            const parsed = this.parseQuestionsFromText(fullText, file.name);
+            if (parsed.length > 0) return parsed;
+        } catch (e) {
+            console.warn('PPT binary parse fallback:', e);
+        }
+
+        questions.push({
+            id: this.generateGuid(),
+            source: file.name,
+            questionNumber: 'Question 1',
+            questionText: `PowerPoint Presentation (${file.name})`,
+            options: [
+                { label: 'A', text: 'Option A' },
+                { label: 'B', text: 'Option B' },
+                { label: 'C', text: 'Option C' },
+                { label: 'D', text: 'Option D' }
+            ],
+            correctAnswer: '',
+            selected: true,
+            hasWarning: true,
+            warningText: 'Binary PPT format extracted with basic text scanner. Please review.',
+            fontSize: 26
+        });
+        return questions;
+    }
+
+    async extractQuestionsFromPdf(file, onProgress) {
+        const questions = [];
+        const arrayBuffer = await file.arrayBuffer();
+
+        // 1. Try PDF.js if available or dynamic load from CDN
+        try {
+            if (typeof pdfjsLib === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                document.head.appendChild(script);
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    setTimeout(reject, 3000);
+                });
+                if (typeof pdfjsLib !== 'undefined') {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                }
+            }
+
+            if (typeof pdfjsLib !== 'undefined') {
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    if (onProgress) {
+                        onProgress(`Extracting PDF page ${p} of ${pdf.numPages}...`, Math.round((p / pdf.numPages) * 70) + 15);
+                    }
+                    const page = await pdf.getPage(p);
+                    const textContent = await page.getTextContent();
+                    let lastY = null;
+                    let pageText = '';
+                    for (const item of textContent.items) {
+                        if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
+                            pageText += '\n';
+                        } else if (pageText && !pageText.endsWith(' ') && !pageText.endsWith('\n')) {
+                            pageText += ' ';
+                        }
+                        pageText += item.str;
+                        lastY = item.transform[5];
+                    }
+                    const parsed = this.parseQuestionsFromText(pageText, `${file.name} (Page ${p})`);
+                    questions.push(...parsed);
+                }
+                if (questions.length > 0) return questions;
+            }
+        } catch (e) {
+            console.warn('PDF.js dynamic load failed or offline, falling back to stream decoder...', e);
+        }
+
+        // 2. Pure JS stream decoder fallback
+        const bytes = new Uint8Array(arrayBuffer);
+        let rawStr = '';
+        for (let i = 0; i < bytes.length; i++) {
+            rawStr += String.fromCharCode(bytes[i]);
+        }
+
+        const matches = rawStr.match(/\(([^)]+)\)\s*Tj/g) || rawStr.match(/\[(.*?)\]\s*TJ/g);
+        if (matches && matches.length > 0) {
+            const extracted = matches.map(m => m.replace(/^[(\[]|[)\]]\s*T[jJ]$/g, '').trim()).join('\n');
+            const parsed = this.parseQuestionsFromText(extracted, file.name);
+            questions.push(...parsed);
+        }
+
+        if (questions.length === 0) {
+            questions.push({
+                id: this.generateGuid(),
+                source: file.name,
+                questionNumber: 'Question 1',
+                questionText: `PDF Document: ${file.name}. Please enter question prompt.`,
+                options: [
+                    { label: 'A', text: 'Option A' },
+                    { label: 'B', text: 'Option B' },
+                    { label: 'C', text: 'Option C' },
+                    { label: 'D', text: 'Option D' }
+                ],
+                correctAnswer: '',
+                selected: true,
+                hasWarning: true,
+                warningText: 'PDF text could not be extracted directly. Please review.',
+                fontSize: 26
+            });
+        }
+
+        return questions;
+    }
+
+    async extractQuestionsFromImage(file, onProgress) {
+        const questions = [];
+        try {
+            if (typeof Tesseract === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+                document.head.appendChild(script);
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    setTimeout(reject, 4000);
+                });
+            }
+
+            if (typeof Tesseract !== 'undefined') {
+                const worker = await Tesseract.createWorker('eng', 1, {
+                    logger: m => {
+                        if (m && m.status && onProgress) {
+                            const pct = Math.round((m.progress || 0) * 100);
+                            onProgress(`OCR Recognizing: ${m.status}... (${pct}%)`, Math.round(pct * 0.7) + 20);
+                        }
+                    }
+                });
+
+                const ret = await worker.recognize(file);
+                await worker.terminate();
+
+                const text = ret.data.text;
+                const parsed = this.parseQuestionsFromText(text, file.name);
+                if (parsed.length > 0) {
+                    return parsed;
+                }
+            }
+        } catch (e) {
+            console.warn('OCR error or offline:', e);
+        }
+
+        // Fallback for image
+        questions.push({
+            id: this.generateGuid(),
+            source: file.name,
+            questionNumber: 'Question 1',
+            questionText: `Image: ${file.name}. Review question and options extracted.`,
+            options: [
+                { label: 'A', text: '' },
+                { label: 'B', text: '' },
+                { label: 'C', text: '' },
+                { label: 'D', text: '' }
+            ],
+            correctAnswer: '',
+            selected: true,
+            hasWarning: true,
+            warningText: 'OCR could not automatically detect all text. Please edit.',
+            fontSize: 26
+        });
+        return questions;
+    }
+
+    parseQuestionsFromText(rawText, source = '') {
+        const results = [];
+        if (!rawText || !rawText.trim()) return results;
+
+        const lines = rawText.split(/\r?\n/).map(l => l.trim());
+        let current = null;
+        let promptLines = [];
+        let inOptions = false;
+        let optionType = null;
+        let hasAnswer = false;
+        let autoNumber = 1;
+
+        const explicitQuestionHeaderRegex = /^(?:(?:Question|Que|Ques|Prob|Problem|MCQ)\s*[:.#-]?\s*(\d+|[A-Za-z]+)\b(?:\s*[:.-])?|Q\s*[:.#-]?\s*(\d+)\b(?:\s*[:.-])?)\s*(.*)$/i;
+        const bareNumberedQuestionRegex = /^(\d+)[\.\)]\s+(.*)$/;
+        const letterOptionRegex = /^(?:\(?\s*([A-Fa-f])\s*[\.\)\:\-]\s*|\(\s*([A-Fa-f])\s*\)\s*|\[\s*([A-Fa-f])\s*\]\s*)(.*)$/;
+        const numericOptionRegex = /^(?:\(?\s*([1-6])\s*[\.\)\:\-]\s*|\(\s*([1-6])\s*\)\s*|\[\s*([1-6])\s*\]\s*)(.*)$/;
+        const answerRegex = /^(?:Correct\s*Answer|Answer|Ans|Key|Correct\s*Option)\s*[:=\-]?\s*(?:\(\s*([A-Fa-f1-6])\s*\)|\[\s*([A-Fa-f1-6])\s*\]|([A-Fa-f1-6]))/i;
+
+        const commitCurrent = () => {
+            if (current) {
+                current.questionText = promptLines.join('\n').trim();
+                if (!current.questionNumber) {
+                    current.questionNumber = `Question ${autoNumber++}`;
+                }
+                if (!current.options || current.options.length < 2) {
+                    current.hasWarning = true;
+                    current.warningText = 'Could not identify 2 or more options. Please review.';
+                    if (!current.options) current.options = [];
+                    while (current.options.length < 2) {
+                        current.options.push({
+                            label: String.fromCharCode(65 + current.options.length),
+                            text: ''
+                        });
+                    }
+                }
+                if (current.questionText || current.options.some(o => o.text)) {
+                    results.push(current);
+                }
+            }
+            current = null;
+            promptLines = [];
+            inOptions = false;
+            optionType = null;
+            hasAnswer = false;
+        };
+
+        for (const line of lines) {
+            if (!line) continue;
+
+            // 1. Answer check
+            const ansMatch = line.match(answerRegex);
+            if (ansMatch && current) {
+                let ansVal = (ansMatch[1] || ansMatch[2] || ansMatch[3] || '').toUpperCase();
+                if (ansVal) {
+                    const numVal = parseInt(ansVal, 10);
+                    if (!isNaN(numVal) && numVal >= 1 && numVal <= 6) {
+                        ansVal = String.fromCharCode(65 + numVal - 1);
+                    }
+                    current.correctAnswer = ansVal;
+                }
+                hasAnswer = true;
+                continue;
+            }
+
+            // 2. Explicit Question Header Check (e.g. "Question 1", "Q1.", "MCQ 1:")
+            const explicitQMatch = line.match(explicitQuestionHeaderRegex);
+            if (explicitQMatch) {
+                commitCurrent();
+                current = {
+                    id: this.generateGuid(),
+                    source: source,
+                    options: [],
+                    correctAnswer: '',
+                    selected: true,
+                    fontSize: 26
+                };
+                const numPart = explicitQMatch[1] || explicitQMatch[2];
+                current.questionNumber = numPart ? `Question ${numPart}` : `Question ${autoNumber++}`;
+                const promptPart = (explicitQMatch[3] || '').trim();
+                if (promptPart) promptLines.push(promptPart);
+                continue;
+            }
+
+            // 3. Option letter check (e.g. "A. Option", "(b) Option")
+            const letterOptMatch = line.match(letterOptionRegex);
+            if (letterOptMatch) {
+                if (!current) {
+                    current = {
+                        id: this.generateGuid(),
+                        source: source,
+                        questionNumber: `Question ${autoNumber++}`,
+                        options: [],
+                        correctAnswer: '',
+                        selected: true,
+                        fontSize: 26
+                    };
+                }
+                inOptions = true;
+                optionType = 'letter';
+                const label = (letterOptMatch[1] || letterOptMatch[2] || letterOptMatch[3] || 'A').toUpperCase();
+                const optText = (letterOptMatch[4] || '').trim();
+                current.options.push({ label, text: optText });
+                continue;
+            }
+
+            // 4. Numeric Option Check (1..6)
+            const numOptMatch = line.match(numericOptionRegex);
+            if (numOptMatch) {
+                const optNum = parseInt(numOptMatch[1] || numOptMatch[2] || numOptMatch[3], 10);
+                if (!isNaN(optNum) && optNum >= 1 && optNum <= 6) {
+                    if (inOptions && optionType === 'numeric') {
+                        const label = String.fromCharCode(65 + optNum - 1);
+                        const optText = (numOptMatch[4] || '').trim();
+                        current.options.push({ label, text: optText });
+                        continue;
+                    }
+
+                    if (current && !inOptions && promptLines.length > 0 && !hasAnswer) {
+                        inOptions = true;
+                        optionType = 'numeric';
+                        const label = String.fromCharCode(65 + optNum - 1);
+                        const optText = (numOptMatch[4] || '').trim();
+                        current.options.push({ label, text: optText });
+                        continue;
+                    }
+                }
+            }
+
+            // 5. Bare Numbered Question Check (e.g. "1. What is...", "2. What is...")
+            const bareQMatch = line.match(bareNumberedQuestionRegex);
+            if (bareQMatch && (!current || hasAnswer || (inOptions && optionType === 'letter'))) {
+                commitCurrent();
+                current = {
+                    id: this.generateGuid(),
+                    source: source,
+                    questionNumber: `Question ${bareQMatch[1]}`,
+                    options: [],
+                    correctAnswer: '',
+                    selected: true,
+                    fontSize: 26
+                };
+                const promptPart = (bareQMatch[2] || '').trim();
+                if (promptPart) promptLines.push(promptPart);
+                continue;
+            }
+
+            // 6. Continuation of Option or Prompt
+            if (current) {
+                if (inOptions && current.options.length > 0) {
+                    current.options[current.options.length - 1].text += ' ' + line;
+                } else {
+                    promptLines.push(line);
+                }
+            } else {
+                current = {
+                    id: this.generateGuid(),
+                    source: source,
+                    options: [],
+                    correctAnswer: '',
+                    selected: true,
+                    fontSize: 26
+                };
+                promptLines.push(line);
+            }
+        }
+
+        commitCurrent();
+
+        if (results.length === 0 && lines.length > 0) {
+            results.push({
+                id: this.generateGuid(),
+                source: source,
+                questionNumber: `Question 1`,
+                questionText: lines.slice(0, 8).join('\n'),
+                options: [
+                    { label: 'A', text: '' },
+                    { label: 'B', text: '' },
+                    { label: 'C', text: '' },
+                    { label: 'D', text: '' }
+                ],
+                correctAnswer: '',
+                selected: true,
+                hasWarning: true,
+                warningText: 'Could not automatically identify options. Please edit.',
+                fontSize: 26
+            });
+        }
+
+        return results;
+    }
+
+    openQuestionReviewModal(questionsList) {
+        const reviewModal = document.getElementById('questionReviewModal');
+        if (!reviewModal) return;
+
+        const container = document.getElementById('reviewQuestionsContainer');
+        const statsEl = document.getElementById('reviewQuestionStats');
+        const countEl = document.getElementById('reviewSelectionCount');
+        const btnSelectAll = document.getElementById('btnSelectAllReviewQuestions');
+        const btnDeselectAll = document.getElementById('btnDeselectAllReviewQuestions');
+        const btnAddManual = document.getElementById('btnAddManualReviewQuestion');
+        const btnConfirm = document.getElementById('btnConfirmQuestionImport');
+
+        let questions = [...(questionsList || [])];
+        const optionLabels = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+        const updateStatsAndCount = () => {
+            const total = questions.length;
+            const selected = questions.filter(q => q.selected).length;
+            const clean = questions.filter(q => !q.hasWarning).length;
+            const warn = questions.filter(q => q.hasWarning).length;
+
+            if (statsEl) {
+                statsEl.innerHTML = `Found <b>${total}</b> questions (${clean} detected cleanly, ${warn > 0 ? `<span style="color:#FBBF24;">${warn} need review</span>` : '0 issues'})`;
+            }
+            if (countEl) {
+                countEl.textContent = `${selected} of ${total} questions selected`;
+            }
+            if (btnConfirm) {
+                btnConfirm.textContent = `📥 Import ${selected} Selected Question${selected === 1 ? '' : 's'}`;
+                btnConfirm.disabled = selected === 0;
+            }
+        };
+
+        const renderCards = () => {
+            container.innerHTML = '';
+
+            questions.forEach((q, qIdx) => {
+                const card = document.createElement('div');
+                card.className = `review-question-card ${q.selected ? '' : 'deselected'} ${q.hasWarning ? 'has-warning' : ''}`;
+                card.dataset.id = q.id;
+
+                const options = q.options && q.options.length ? q.options : [
+                    { label: 'A', text: '' }, { label: 'B', text: '' }, { label: 'C', text: '' }, { label: 'D', text: '' }
+                ];
+
+                let optionsHtml = '';
+                options.forEach((opt, optIdx) => {
+                    const lbl = optionLabels[optIdx] || opt.label || String.fromCharCode(65 + optIdx);
+                    const isCorrect = (q.correctAnswer || '').toUpperCase() === lbl.toUpperCase();
+                    optionsHtml += `
+                        <div class="review-option-row" data-opt-idx="${optIdx}">
+                            <div class="review-option-badge ${isCorrect ? 'is-correct' : ''}">${lbl}</div>
+                            <input type="text" class="form-control form-control-sm review-opt-input" placeholder="Option ${lbl} text..." value="${this.escapeHtml(opt.text || '')}">
+                            <button type="button" class="btn btn-xs btn-outline-danger btn-remove-review-opt" title="Remove Option" ${options.length <= 2 ? 'disabled' : ''}>✕</button>
+                        </div>
+                    `;
+                });
+
+                let answerSelectOptions = '<option value="">None (Ungraded / Poll)</option>';
+                options.forEach((opt, optIdx) => {
+                    const lbl = optionLabels[optIdx] || opt.label;
+                    answerSelectOptions += `<option value="${lbl}" ${q.correctAnswer === lbl ? 'selected' : ''}>Option ${lbl}</option>`;
+                });
+
+                card.innerHTML = `
+                    <div class="review-card-header">
+                        <div class="review-card-title-group">
+                            <input type="checkbox" class="review-q-select" ${q.selected ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;">
+                            <input type="text" class="form-control form-control-sm review-q-num" value="${this.escapeHtml(q.questionNumber || `Question ${qIdx + 1}`)}" style="width:160px; font-weight:600;">
+                            ${q.hasWarning ? `<span class="review-warning-badge" title="${this.escapeHtml(q.warningText || 'Please review')}">⚠ Review Needed</span>` : ''}
+                            ${q.source ? `<span style="font-size:11px; color:#64748B;">(${this.escapeHtml(q.source)})</span>` : ''}
+                        </div>
+                        <div class="review-card-actions">
+                            <button type="button" class="btn btn-xs btn-dark btn-move-up-q" title="Move Up" ${qIdx === 0 ? 'disabled' : ''}>▲</button>
+                            <button type="button" class="btn btn-xs btn-dark btn-move-down-q" title="Move Down" ${qIdx === questions.length - 1 ? 'disabled' : ''}>▼</button>
+                            <button type="button" class="btn btn-xs btn-outline-danger btn-del-review-q" title="Delete Question">🗑</button>
+                        </div>
+                    </div>
+                    <div class="review-card-body">
+                        <textarea class="form-control review-q-text" rows="2" placeholder="Question statement / prompt...">${this.escapeHtml(q.questionText || '')}</textarea>
+                        <div class="review-options-container">
+                            ${optionsHtml}
+                        </div>
+                        <div class="review-bottom-row">
+                            <button type="button" class="btn btn-xs btn-secondary btn-add-review-opt" ${options.length >= 6 ? 'disabled' : ''}>+ Option</button>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <label style="font-size:12px; color:#94A3B8; margin-bottom:0;">Correct Answer:</label>
+                                <select class="form-select form-select-sm review-correct-select" style="width:160px;">
+                                    ${answerSelectOptions}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Bind events for this card
+                const chk = card.querySelector('.review-q-select');
+                chk.addEventListener('change', (e) => {
+                    q.selected = e.target.checked;
+                    card.classList.toggle('deselected', !q.selected);
+                    updateStatsAndCount();
+                });
+
+                const numInp = card.querySelector('.review-q-num');
+                numInp.addEventListener('input', (e) => {
+                    q.questionNumber = e.target.value;
+                });
+
+                const textInp = card.querySelector('.review-q-text');
+                textInp.addEventListener('input', (e) => {
+                    q.questionText = e.target.value;
+                });
+
+                const correctSel = card.querySelector('.review-correct-select');
+                correctSel.addEventListener('change', (e) => {
+                    q.correctAnswer = e.target.value;
+                    // update option badge colors
+                    const badges = card.querySelectorAll('.review-option-badge');
+                    badges.forEach((b, idx) => {
+                        const lbl = optionLabels[idx];
+                        b.classList.toggle('is-correct', q.correctAnswer === lbl);
+                    });
+                });
+
+                // Option inputs
+                const optInputs = card.querySelectorAll('.review-opt-input');
+                optInputs.forEach((inp, idx) => {
+                    inp.addEventListener('input', (e) => {
+                        if (q.options[idx]) q.options[idx].text = e.target.value;
+                    });
+                });
+
+                // Remove option buttons
+                const removeBtns = card.querySelectorAll('.btn-remove-review-opt');
+                removeBtns.forEach((b, idx) => {
+                    b.addEventListener('click', () => {
+                        if (q.options.length <= 2) return;
+                        q.options.splice(idx, 1);
+                        renderCards();
+                        updateStatsAndCount();
+                    });
+                });
+
+                // Add option button
+                const btnAddOpt = card.querySelector('.btn-add-review-opt');
+                if (btnAddOpt) {
+                    btnAddOpt.addEventListener('click', () => {
+                        if (q.options.length >= 6) return;
+                        const nextLabel = optionLabels[q.options.length] || String.fromCharCode(65 + q.options.length);
+                        q.options.push({ label: nextLabel, text: '' });
+                        renderCards();
+                        updateStatsAndCount();
+                    });
+                }
+
+                // Delete question
+                const btnDelQ = card.querySelector('.btn-del-review-q');
+                if (btnDelQ) {
+                    btnDelQ.addEventListener('click', () => {
+                        questions.splice(qIdx, 1);
+                        renderCards();
+                        updateStatsAndCount();
+                    });
+                }
+
+                // Move up / down
+                const btnUp = card.querySelector('.btn-move-up-q');
+                if (btnUp) {
+                    btnUp.addEventListener('click', () => {
+                        if (qIdx > 0) {
+                            const tmp = questions[qIdx];
+                            questions[qIdx] = questions[qIdx - 1];
+                            questions[qIdx - 1] = tmp;
+                            renderCards();
+                            updateStatsAndCount();
+                        }
+                    });
+                }
+
+                const btnDown = card.querySelector('.btn-move-down-q');
+                if (btnDown) {
+                    btnDown.addEventListener('click', () => {
+                        if (qIdx < questions.length - 1) {
+                            const tmp = questions[qIdx];
+                            questions[qIdx] = questions[qIdx + 1];
+                            questions[qIdx + 1] = tmp;
+                            renderCards();
+                            updateStatsAndCount();
+                        }
+                    });
+                }
+
+                container.appendChild(card);
+            });
+        };
+
+        if (btnSelectAll) {
+            btnSelectAll.onclick = () => {
+                questions.forEach(q => q.selected = true);
+                renderCards();
+                updateStatsAndCount();
+            };
+        }
+
+        if (btnDeselectAll) {
+            btnDeselectAll.onclick = () => {
+                questions.forEach(q => q.selected = false);
+                renderCards();
+                updateStatsAndCount();
+            };
+        }
+
+        if (btnAddManual) {
+            btnAddManual.onclick = () => {
+                const nextNum = questions.length + 1;
+                questions.push({
+                    id: this.generateGuid(),
+                    questionNumber: `Question ${nextNum}`,
+                    questionText: '',
+                    options: [
+                        { label: 'A', text: '' },
+                        { label: 'B', text: '' },
+                        { label: 'C', text: '' },
+                        { label: 'D', text: '' }
+                    ],
+                    correctAnswer: '',
+                    selected: true,
+                    fontSize: 26
+                });
+                renderCards();
+                updateStatsAndCount();
+                // Scroll to bottom
+                const reviewBody = document.querySelector('.question-review-body');
+                if (reviewBody) reviewBody.scrollTop = reviewBody.scrollHeight;
+            };
+        }
+
+        if (btnConfirm) {
+            btnConfirm.onclick = () => {
+                const selected = questions.filter(q => q.selected);
+                if (selected.length === 0) {
+                    alert('Please select at least one question to import.');
+                    return;
+                }
+
+                const modeRadio = document.querySelector('input[name="importPlacementMode"]:checked');
+                const mode = modeRadio ? modeRadio.value : 'new-pages';
+
+                this.importQuestionsIntoStudio(selected, mode);
+                reviewModal.style.display = 'none';
+            };
+        }
+
+        renderCards();
+        updateStatsAndCount();
+        reviewModal.style.display = 'flex';
+    }
+
+    importQuestionsIntoStudio(selectedQuestions, mode = 'new-pages') {
+        if (!selectedQuestions || selectedQuestions.length === 0) return;
+
+        const prevPages = JSON.parse(JSON.stringify(this.pages));
+        const prevPageIndex = this.currentPageIndex;
+
+        if (mode === 'current-page') {
+            const first = selectedQuestions[0];
+            const qObj = {
+                id: this.generateGuid(),
+                questionNumber: first.questionNumber || `Question ${this.currentPageIndex + 1}`,
+                questionText: first.questionText || '',
+                options: (first.options || []).map((opt, i) => ({
+                    label: opt.label || String.fromCharCode(65 + i),
+                    text: opt.text || ''
+                })),
+                correctAnswer: first.correctAnswer || '',
+                isAnswerRevealed: false,
+                x: 80,
+                y: 80,
+                width: 1000,
+                fontSize: first.fontSize || 26,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            };
+            this.currentPage.question = qObj;
+        } else {
+            // mode === 'new-pages'
+            let firstAssigned = false;
+
+            // If current page is empty (single page, no strokes, no question), use it for Q1
+            if (this.pages.length === 1 && this.pages[0].strokes.length === 0 && !this.pages[0].question) {
+                const q1 = selectedQuestions[0];
+                this.pages[0].question = {
+                    id: this.generateGuid(),
+                    questionNumber: q1.questionNumber || 'Question 1',
+                    questionText: q1.questionText || '',
+                    options: (q1.options || []).map((opt, i) => ({
+                        label: opt.label || String.fromCharCode(65 + i),
+                        text: opt.text || ''
+                    })),
+                    correctAnswer: q1.correctAnswer || '',
+                    isAnswerRevealed: false,
+                    x: 80,
+                    y: 80,
+                    width: 1000,
+                    fontSize: q1.fontSize || 26,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                };
+                firstAssigned = true;
+            }
+
+            const itemsToAdd = firstAssigned ? selectedQuestions.slice(1) : selectedQuestions;
+
+            for (const q of itemsToAdd) {
+                const newIdx = this.pages.length;
+                this.pages.push({
+                    index: newIdx,
+                    title: `Page ${newIdx + 1}`,
+                    background: this.activeBackground,
+                    question: {
+                        id: this.generateGuid(),
+                        questionNumber: q.questionNumber || `Question ${newIdx + 1}`,
+                        questionText: q.questionText || '',
+                        options: (q.options || []).map((opt, i) => ({
+                            label: opt.label || String.fromCharCode(65 + i),
+                            text: opt.text || ''
+                        })),
+                        correctAnswer: q.correctAnswer || '',
+                        isAnswerRevealed: false,
+                        x: 80,
+                        y: 80,
+                        width: 1000,
+                        fontSize: q.fontSize || 26,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                    },
+                    strokes: []
+                });
+            }
+
+            if (!firstAssigned && itemsToAdd.length > 0) {
+                this.setPageIndex(prevPages.length);
+            }
+        }
+
+        // Push to undo stack
+        this.undoStack.push({
+            type: 'importQuestions',
+            prevPages: prevPages,
+            prevPageIndex: prevPageIndex,
+            nextPages: JSON.parse(JSON.stringify(this.pages)),
+            nextPageIndex: this.currentPageIndex
+        });
+        this.redoStack = [];
+
+        document.getElementById('pageIndicator').textContent = `Page ${this.currentPageIndex + 1} of ${this.pages.length}`;
+        this.renderCanvas();
+        this.syncQuestionOverlay();
     }
 
     // ==========================================

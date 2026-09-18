@@ -113,5 +113,137 @@ public class ModelTests
         clone.Question.Options.Add(new QuestionOptionItem { Label = "D", Text = "Madrid" });
         page.Question.Options.Should().HaveCount(3);
     }
+
+    [Fact]
+    public void QuestionParser_SingleQuestion_ParsesPromptOptionsAndAnswer()
+    {
+        string text = """
+            1. What is the capital of Maharashtra?
+
+            A. Mumbai
+            B. Pune
+            C. Nagpur
+            D. Nashik
+
+            Answer: A
+            """;
+
+        var questions = WriteStudio.Core.Parsing.QuestionParser.ParseFromText(text, "Slide 1");
+        questions.Should().HaveCount(1);
+
+        var q = questions[0];
+        q.QuestionNumber.Should().Be("Question 1");
+        q.QuestionText.Should().Be("What is the capital of Maharashtra?");
+        q.Options.Should().HaveCount(4);
+        q.Options[0].Label.Should().Be("A");
+        q.Options[0].Text.Should().Be("Mumbai");
+        q.Options[1].Label.Should().Be("B");
+        q.Options[1].Text.Should().Be("Pune");
+        q.CorrectAnswer.Should().Be("A");
+
+        var item = q.ToQuestionItem(1);
+        item.QuestionText.Should().Be("What is the capital of Maharashtra?");
+        item.CorrectAnswer.Should().Be("A");
+        item.Options.Should().HaveCount(4);
+    }
+
+    [Fact]
+    public void QuestionParser_MultipleQuestionsInSingleDocument_ParsesAllInOrder()
+    {
+        string text = """
+            Question 1
+            What is C#?
+
+            A) Programming Language
+            B) Database
+            C) OS
+            D) Browser
+            Ans: A
+
+
+            Question 2
+            What is .NET?
+
+            (a) Framework
+            (b) Database
+            (c) Browser
+            (d) Operating System
+            Correct Answer: A. Framework
+
+
+            Question 3
+            What is ASP.NET Core?
+
+            1. Web Framework
+            2. Language
+            3. Database
+            4. IDE
+            Key: 1
+            """;
+
+        var questions = WriteStudio.Core.Parsing.QuestionParser.ParseFromText(text, "Document.pdf");
+        questions.Should().HaveCount(3);
+
+        questions[0].QuestionNumber.Should().Be("Question 1");
+        questions[0].QuestionText.Should().Be("What is C#?");
+        questions[0].Options.Should().HaveCount(4);
+        questions[0].CorrectAnswer.Should().Be("A");
+
+        questions[1].QuestionNumber.Should().Be("Question 2");
+        questions[1].QuestionText.Should().Be("What is .NET?");
+        questions[1].Options.Should().HaveCount(4);
+        questions[1].Options[0].Label.Should().Be("A");
+        questions[1].CorrectAnswer.Should().Be("A");
+
+        questions[2].QuestionNumber.Should().Be("Question 3");
+        questions[2].QuestionText.Should().Be("What is ASP.NET Core?");
+        questions[2].Options.Should().HaveCount(4);
+        questions[2].Options[0].Label.Should().Be("A");
+        questions[2].CorrectAnswer.Should().Be("A");
+    }
+
+    [Fact]
+    public void QuestionParser_BareNumberedConsecutiveQuestions_ParsesSuccessfully()
+    {
+        string text = """
+            1. What does HTML stand for?
+            A. Hyper Text Markup Language
+            B. High Text Marking Language
+            Ans: A
+
+            2. What does CSS stand for?
+            A. Creative Style Sheets
+            B. Cascading Style Sheets
+            Ans: B
+            """;
+
+        var questions = WriteStudio.Core.Parsing.QuestionParser.ParseFromText(text, "Slide 1");
+        questions.Should().HaveCount(2);
+
+        questions[0].QuestionNumber.Should().Be("Question 1");
+        questions[0].QuestionText.Should().Be("What does HTML stand for?");
+        questions[0].Options.Should().HaveCount(2);
+        questions[0].CorrectAnswer.Should().Be("A");
+
+        questions[1].QuestionNumber.Should().Be("Question 2");
+        questions[1].QuestionText.Should().Be("What does CSS stand for?");
+        questions[1].Options.Should().HaveCount(2);
+        questions[1].CorrectAnswer.Should().Be("B");
+    }
+
+    [Fact]
+    public void QuestionParser_MalformedTextWithoutOptions_SetsWarningFlag()
+    {
+        string text = "This is a random slide title with no options.";
+
+        var questions = WriteStudio.Core.Parsing.QuestionParser.ParseFromText(text, "Slide 10");
+        questions.Should().HaveCount(1);
+        questions[0].HasWarning.Should().BeTrue();
+        questions[0].WarningText.Should().NotBeNullOrEmpty();
+
+        var item = questions[0].ToQuestionItem(1);
+        item.QuestionNumber.Should().Be("Question 1");
+        item.Options.Should().HaveCount(2); // padded with default empty options
+    }
 }
 

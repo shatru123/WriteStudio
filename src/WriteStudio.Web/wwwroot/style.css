@@ -1842,3 +1842,192 @@ body {
     cursor: grabbing;
 }
 
+/* ==========================================
+   Question Import & Review Modals
+   ========================================== */
+.modal-question-import {
+    width: 560px;
+    max-width: 95vw;
+    background: #0F172A;
+    border: 1px solid #334155;
+    border-radius: 12px;
+}
+
+.question-import-body {
+    padding: 24px;
+}
+
+.import-dropzone {
+    border: 2px dashed #38BDF8;
+    background: rgba(56, 189, 248, 0.04);
+    border-radius: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.import-dropzone:hover,
+.import-dropzone.drag-over {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: #0284C7;
+    transform: scale(1.01);
+}
+
+.dropzone-icon {
+    font-size: 42px;
+    margin-bottom: 12px;
+}
+
+.import-dropzone h4 {
+    margin: 0 0 6px 0;
+    color: #F8FAFC;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.dropzone-sub {
+    margin: 0 0 12px 0;
+    color: #94A3B8;
+    font-size: 13px;
+}
+
+.supported-formats-badge {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #64748B;
+    background: rgba(15, 23, 42, 0.6);
+    padding: 6px 12px;
+    border-radius: 20px;
+    display: inline-block;
+    border: 1px solid #1E293B;
+}
+
+.supported-formats-badge b {
+    color: #38BDF8;
+}
+
+/* Question Review Modal */
+.modal-question-review {
+    width: 880px;
+    max-width: 96vw;
+    background: #0F172A;
+    border: 1px solid #334155;
+    border-radius: 12px;
+}
+
+.question-review-body {
+    padding: 16px 20px;
+    max-height: 72vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.import-mode-box {
+    background: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+.review-questions-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.review-question-card {
+    background: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: border-color 0.15s ease;
+}
+
+.review-question-card.deselected {
+    opacity: 0.55;
+    border-color: #1E293B;
+    background: #0B1120;
+}
+
+.review-question-card.has-warning {
+    border-color: rgba(245, 158, 11, 0.6);
+}
+
+.review-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 10px;
+}
+
+.review-card-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.review-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.review-warning-badge {
+    background: rgba(245, 158, 11, 0.15);
+    color: #FBBF24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.review-options-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.review-option-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.review-option-badge {
+    width: 28px;
+    height: 28px;
+    background: #0284C7;
+    color: #FFF;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.review-option-badge.is-correct {
+    background: #16A34A;
+}
+
+.review-bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+
